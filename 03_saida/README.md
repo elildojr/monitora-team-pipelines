@@ -1,1 +1,1 @@
-# Dados de saida (resultados, figuras, tabelas, arquivos em formato csv, rds, etc.)
+Dados de saida (resultados, figuras, tabelas, arquivos em formato csv, rds, etc.)

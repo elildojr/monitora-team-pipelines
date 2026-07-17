@@ -23,14 +23,10 @@ rm(data_fixed_dates)
 # NB! lets fix only Mammalia identifications. Lets leave the birds to CEMAVE 
 
 #----- firstly, lets keep only global targets
-# discard non-targets as well as congeneric species that
-# are difficult to identify
-# e.g. Dasypus, Leopardus, Mazama 
-
+# discard non-targets
 
 global_targets <- images %>%
   filter(class %in% c("Mammalia")) %>%
-  #filter(class %in% c("Mammalia", "Aves")) %>%
   filter(family %in% c("Canidae", "Felidae", "Mustelidae", "Procyonidae",
                        "Cervidae",  "Tayassuidae",
                        "Chlamyphoridae", "Dasypodidae",
@@ -66,46 +62,6 @@ images %>%
 
 # use the table above to fix taxonomies in wildlife insights (whenever possible)
 
-target_spp <- images %>%
-  filter(project_id == 2002545) %>%
-  # filter target species / species with sufficient data
-  drop_na(genus, species) %>%
-  filter(genus %in% c("Geotrygon", "Mitu", "Odontophorus", "Psophia", 
-                      "Panthera", "Eira", "Nasua", "Dicotyles",
-                      "Tayassu", "Priodontes", "Didelphis", "Tapirus",
-                      "Myrmecophaga", "Tamandua", "Cuniculus", "Dasyprocta")) %>%
-  filter(! species %in% c("guttatus", "major")) %>%
-  group_by(class, order, family, genus, species) %>%
-  count() %>%
-  arrange(class, order, family, genus, species) %>%
-  print(n=Inf) %>%
-  mutate(targets = paste(genus, species, sep = " ")) %>%
-  pull(targets) %>%
-  print()
-
-# fix taxnomomies
-images <- images %>% 
-  mutate(species = case_when(project_id == 2002545 & genus == "Geotrygon" ~ "montana",
-                             project_id == 2002545 & genus == "Odontophorus" ~ "gujanensis",
-                             project_id == 2002545 & genus == "Didelphis" ~ "marsupialis",
-                             project_id == 2002545 & genus == "Sciurus" ~ "aestuans",
-                             .default = species)) %>%
-  print()
-  
-
-# now filter images files based on target_spp
-images <- images %>%
-  filter(
-    if_else(
-      # condition: target project
-      project_id == 2002545,
-      # if TRUE: check if genus + species combination exists in target_sp_gurupi
-      paste(genus, species) %in% target_spp,
-      # if FALSE: keep the row automatically
-      TRUE
-    )) %>%
-  print()
-
 
 
 # terra do meio
@@ -115,53 +71,6 @@ images %>%
   count() %>%
   arrange(class, order, family, genus, species) %>%
   print(n=Inf)
-
-target_spp <- images %>%
-  filter(project_id == 2002554) %>%
-  # filter target species / species with enough data
-  drop_na(genus, species) %>%
-  filter(genus %in% c("Geotrygon", "Crax", "Mitu", "Odontophorus", 
-                      "Psophia", "Tinamus", "Panthera", "Puma",
-                      "Eira", "Nasua", "Dicotyles", "Tayassu",
-                      "Metachirus", "Tapirus", "Myrmecophaga", "Tamandua",
-                      "Cuniculus", "Dasyprocta")) %>%
-  filter(! species %in% c("guttatus", "major")) %>%
-  group_by(class, order, family, genus, species) %>%
-  count() %>%
-  arrange(class, order, family, genus, species) %>%
-  print(n=Inf) %>%
-  mutate(targets = paste(genus, species, sep = " ")) %>%
-  pull(targets) %>%
-  print()
-
-# fix taxonomies
-images <- images %>%
-  mutate(species = case_when(project_id == 2002554 & genus == "Geotrygon" ~ "montana",
-                             project_id == 2002554 & genus == "Crax" ~ "fasciolata",
-                             project_id == 2002554 & genus == "Mitu" ~ "tuberosum",
-                             project_id == 2002554 & genus == "Odontophorus" ~ "gujanensis",
-                             project_id == 2002554 & genus == "Nasua" ~ "nasua",
-                             project_id == 2002554 & genus == "Tayassu" ~ "pecari",
-                             project_id == 2002554 & genus == "Metachirus" ~ "nudicaudatus",
-                             project_id == 2002554 & genus == "Tapirus" ~ "terrestris",
-                             project_id == 2002554 & genus == "Cuniculus" ~ "paca",
-                             project_id == 2002554 & genus == "Dasyprocta" ~ "iacki",
-                             project_id == 2002554 & species == "viridis" ~ "dextralis",
-                             .default = species)) %>%
-  print()
-
-# now filter images files based on target_spp
-images <- images %>%
-  filter(
-    if_else(
-      # condition: target project
-      project_id == 2002554,
-      # if TRUE: check if genus + species combination exists in target_sp_gurupi
-      paste(genus, species) %in% target_spp,
-      # if FALSE: keep the row automatically
-      TRUE
-    )) %>%
-  print()
 
 
 
@@ -173,49 +82,6 @@ images %>%
   arrange(class, order, family, genus, species) %>%
   print(n=Inf)
 
-target_spp <- images %>%
-  filter(project_id == 2002562) %>%
-  # filter target species / species with enough data
-  drop_na(genus, species) %>%
-  filter(genus %in% c("Geotrygon", "Mitu", "Eira", "Nasua", 
-                      "Dicotyles", "Tayassu", "Priodontes", "Didelphis",
-                      "Tapirus", "Myrmecophaga", "Cuniculus", "Dasyprocta")) %>%
-  filter(! species %in% c("guttatus", "major")) %>%
-  group_by(class, order, family, genus, species) %>%
-  count() %>%
-  arrange(class, order, family, genus, species) %>%
-  print(n=Inf) %>%
-  mutate(targets = paste(genus, species, sep = " ")) %>%
-  pull(targets) %>%
-  print()
-
-# fix taxonomies
-images <- images %>%
-  mutate(species = case_when(project_id == 2002562 & genus == "Mitu" ~ "tuberosum",
-                             project_id == 2002562 & genus == "Psophia" ~ "viridis",
-                             project_id == 2002562 & genus == "Didelphis" ~ "marsupialis",
-                             project_id == 2002562 & genus == "Cuniculus" ~ "paca",
-                             project_id == 2002562 & genus == "Dasyprocta" ~ "fuliginosa",
-                             project_id == 2002562 & species == "crepitans" ~ "viridis",
-                             project_id == 2002562 & species == "leporina" ~ "fuliginosa",
-                             project_id == 2002562 & species == "punctata" ~ "fuliginosa",
-                             .default = species)) %>%
-  print()
-
-
-# now filter images files based on target_spp
-images <- images %>%
-  filter(
-    if_else(
-      # condition: target project
-      project_id == 2002562,
-      # if TRUE: check if genus + species combination exists in target_sp_gurupi
-      paste(genus, species) %in% target_spp,
-      # if FALSE: keep the row automatically
-      TRUE
-    )) %>%
-  print()
-
 
 
 # juruena
@@ -226,38 +92,6 @@ images %>%
   arrange(class, order, family, genus, species) %>%
   print(n=Inf)
 
-target_spp <- images %>%
-  filter(project_id == 2002576) %>%
-  # filter target species / species with enough data
-  drop_na(genus, species) %>%
-  filter(genus %in% c("Geotrygon", "Crax", "Mitu", "Psophia", 
-                      "Panthera", "Puma", "Eira", "Nasua",
-                      "Dicotyles", "Tayassu", "Priodontes", "Didelphis",
-                      "Metachirus", "Tapirus", "Myrmecophaga", "Tamandua",
-                      "Cuniculus", "Dasyprocta")) %>%
-  filter(! species %in% c("guttatus", "major")) %>%
-  group_by(class, order, family, genus, species) %>%
-  count() %>%
-  arrange(class, order, family, genus, species) %>%
-  print(n=Inf) %>%
-  mutate(targets = paste(genus, species, sep = " ")) %>%
-  pull(targets) %>%
-  print()
-
-
-# now filter images files based on target_spp
-images <- images %>%
-  filter(
-    if_else(
-      # condition: target project
-      project_id == 2002576,
-      # if TRUE: check if genus + species combination exists in target_sp_gurupi
-      paste(genus, species) %in% target_spp,
-      # if FALSE: keep the row automatically
-      TRUE
-    )) %>%
-  print()
-
 
 # maraca
 images %>%
@@ -266,47 +100,6 @@ images %>%
   count() %>%
   arrange(class, order, family, genus, species) %>%
   print(n=Inf)
-
-target_spp <- images %>%
-  filter(project_id == 2002584) %>%
-  # filter target species / species with enough data
-  drop_na(genus, species) %>%
-  filter(genus %in% c("Crax", "Psophia", "Puma", "Eira", 
-                      "Dicotyles", "Tayassu", "Tapirus", "Myrmecophaga",
-                      "Cuniculus", "Dasyprocta")) %>%
-  filter(! species %in% c("guttatus", "major")) %>%
-  group_by(class, order, family, genus, species) %>%
-  count() %>%
-  arrange(class, order, family, genus, species) %>%
-  print(n=Inf) %>%
-  mutate(targets = paste(genus, species, sep = " ")) %>%
-  pull(targets) %>%
-  print()
-
-
-# fix taxonomies
-images <- images %>%
-  mutate(species = case_when(project_id == 2002584 & genus == "Dasyprocta" ~ "leporina",
-                             project_id == 2002584 & genus == "Psophia" ~ "crepitans",
-                             project_id == 2002584 & genus == "Crax" ~ "alector",
-                             project_id == 2002584 & genus == "Tayassu" ~ "pecari",
-                             project_id == 2002584 & genus == "Tapirus" ~ "terrestris",
-                             .default = species)) %>%
-  print()
-
-
-# now filter images files based on target_spp
-images <- images %>%
-  filter(
-    if_else(
-      # condition: target project
-      project_id == 2002584,
-      # if TRUE: check if genus + species combination exists in target_sp_gurupi
-      paste(genus, species) %in% target_spp,
-      # if FALSE: keep the row automatically
-      TRUE
-    )) %>%
-  print()
 
 
 
