@@ -15,6 +15,8 @@ deployments <- read_csv("01_entrada/dados_brutos/deployments.csv") %>%
   select(project_id, deployment_id, placename,
          longitude, latitude, start_date, end_date,
          camera_functioning, subproject_name, event_name) %>%
+  distinct(project_id, deployment_id, placename,
+           longitude, latitude, start_date, end_date, .keep_all = TRUE) %>%
   print()
 
 # images
@@ -39,9 +41,9 @@ images <- filter_independent(images, 60) %>%
 
 
 # save aggregated data
-florestal_raw <- list(projects=projects,
-                      deployments=deployments,
-                      images=images)
+data_aggregated <- list(projects=projects,
+                        deployments=deployments,
+                        images=images)
 
-saveRDS(florestal_raw, "01_entrada/dados_processados/florestal_raw.rds")
+saveRDS(data_aggregated, "01_entrada/dados_processados/data_aggregated.rds")
 

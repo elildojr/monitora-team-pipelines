@@ -8,19 +8,19 @@ source("02_scripts/00_setup.R")
 
 
 #----- read data
-florestal_fixed_coords <- readRDS("01_entrada/dados_processados/florestal_fixed_coords.rds")
+data_fixed_coords <- readRDS("01_entrada/dados_processados/data_fixed_coords.rds")
 
-projects <- florestal_fixed_coords$projects %>%
+projects <- data_fixed_coords$projects %>%
   print()
 
-deployments <- florestal_fixed_coords$deployments %>%
+deployments <- data_fixed_coords$deployments %>%
   mutate(start_date = as.Date(start_date),
          end_date = as.Date(end_date)) %>%
   drop_na(start_date, end_date) %>%
   select(-c(camera_functioning, subproject_name, event_name)) %>%
   print()
 
-images <- florestal_fixed_coords$images %>%
+images <- data_fixed_coords$images %>%
   drop_na(timestamp) %>%
   # add start_date and end_date to images
   left_join(deployments %>%
@@ -32,7 +32,7 @@ images <- florestal_fixed_coords$images %>%
   drop_na(start_date, end_date, photo_date) %>%
   print()
 
-rm(florestal_fixed_coords)
+rm(data_fixed_coords)
 
 
 
@@ -992,8 +992,8 @@ images <- images %>%
 
 
 #----- save aggregated data
-florestal_fixed_dates <- list(projects=projects,
+data_fixed_dates <- list(projects=projects,
                          deployments=deployments,
                          images=images)
-saveRDS(florestal_fixed_dates, "01_entrada/dados_processados/florestal_fixed_dates.rds")
+saveRDS(data_fixed_dates, "01_entrada/dados_processados/data_fixed_dates.rds")
 

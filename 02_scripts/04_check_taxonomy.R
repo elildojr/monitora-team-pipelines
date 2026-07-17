@@ -8,11 +8,11 @@ source("02_scripts/00_setup.R")
 
 
 #----- read data
-florestal_fixed_dates <- readRDS("01_entrada/dados_processados/florestal_fixed_dates.rds")
-projects <- florestal_fixed_dates$projects
-deployments <- florestal_fixed_dates$deployments
-images <- florestal_fixed_dates$images
-rm(florestal_fixed_dates)
+data_fixed_dates <- readRDS("01_entrada/dados_processados/data_fixed_dates.rds")
+projects <- data_fixed_dates$projects
+deployments <- data_fixed_dates$deployments
+images <- data_fixed_dates$images
+rm(data_fixed_dates)
 
 #----- check taxonomy
 
@@ -305,9 +305,9 @@ images <- images %>%
 
 
 # save aggregated data
-florestal_fixed_taxonomy <- list(projects=projects,
+data_fixed_taxonomy <- list(projects=projects,
                                  deployments=deployments,
                                  images=images)
 
-saveRDS(florestal_fixed_taxonomy, "01_entrada/dados_processados/florestal_fixed_taxonomy.rds")
+saveRDS(data_fixed_taxonomy, "01_entrada/dados_processados/data_fixed_taxonomy.rds")
 
