@@ -8,49 +8,53 @@ source("02_scripts/00_setup.R")
 
 
 #----- read data
-florestal_fixed_dates <- readRDS("01_entrada/dados_processados/florestal_fixed_dates.rds")
-projects <- florestal_fixed_dates$projects
-deployments <- florestal_fixed_dates$deployments
-images <- florestal_fixed_dates$images
-rm(florestal_fixed_dates)
+data_fixed_dates <- readRDS("01_entrada/dados_processados/data_fixed_dates.rds")
+projects <- data_fixed_dates$projects
+deployments <- data_fixed_dates$deployments
+images <- data_fixed_dates$images
+rm(data_fixed_dates)
+
 
 #----- check taxonomy
 
 # NB! incorrect identifications should be checked and fixed in Wildlife Insights
 # however, here we will provisionally fix some stuff here
 
-#----- firstly, keep only global targets
+# NB! lets fix only Mammalia identifications. Lets leave the birds to CEMAVE 
+
+#----- firstly, lets keep only global targets
 # discard non-targets as well as congeneric species that
 # are difficult to identify
 # e.g. Dasypus, Leopardus, Mazama 
+
+
 global_targets <- images %>%
-  filter(class %in% c("Mammalia", "Aves")) %>%
-  filter(family %in% c("Columbidae", "Cracidae", "Odontophoridae", "Psophiidae",
-                      "Tinamidae", "Cervidae", "Canidae", "Felidae",
-                      "Mustelidae", "Procyonidae", "Tayassuidae", "Chlamyphoridae",
-                      "Dasypodidae", "Didelphidae", "Tapiridae", "Myrmecophagidae",
-                      "Cuniculidae", "Dasyproctidae", "Sciuridae")) %>%
-  filter(genus %in% c("Geotrygon", "Crax", "Mitu", "Penelope", "Odontophorus",
-                      "Psophia", "Tinamus", "Atelocynus", "Panthera", "Puma",
-                      "Eira", "Nasua", "Dicotyles", "Tayassu", "Priodontes",
-                      "Didelphis", "Metachirus", "Tapirus", "Myrmecophaga",
-                       "Tamandua", "Cuniculus", "Dasyprocta", "Sciurus")) %>%
+  filter(class %in% c("Mammalia")) %>%
+  #filter(class %in% c("Mammalia", "Aves")) %>%
+  filter(family %in% c("Canidae", "Felidae", "Mustelidae", "Procyonidae",
+                       "Cervidae",  "Tayassuidae",
+                       "Chlamyphoridae", "Dasypodidae",
+                       "Didelphidae",
+                       "Tapiridae",
+                       "Myrmecophagidae",
+                       "Cuniculidae", "Dasyproctidae", "Sciuridae")) %>%
   group_by(class, order, family, genus, species) %>%
   count() %>%
   arrange(class, order, family, genus, species) %>%
   print(n=Inf) %>%
   mutate(targets = paste(genus, species, sep = " ")) %>%
-  pull(targets) %>%
-  print()
+  pull(targets) #%>% print()
 
-# now filter images files based on target_spp
+global_targets
+
+# now filter images files keeping only what is in global_targets
 images <- images %>%
   filter(paste(genus, species) %in% global_targets) %>%
   print()
 
 
 
-#----- now, check individual projects
+#----- now, check and fix taxonomy of individual projects...
 
 # gurupi
 images %>%
@@ -60,9 +64,11 @@ images %>%
   arrange(class, order, family, genus, species) %>%
   print(n=Inf)
 
+# use the table above to fix taxonomies in wildlife insights (whenever possible)
+
 target_spp <- images %>%
   filter(project_id == 2002545) %>%
-  # filter target species / species with enough data
+  # filter target species / species with sufficient data
   drop_na(genus, species) %>%
   filter(genus %in% c("Geotrygon", "Mitu", "Odontophorus", "Psophia", 
                       "Panthera", "Eira", "Nasua", "Dicotyles",
@@ -305,9 +311,9 @@ images <- images %>%
 
 
 # save aggregated data
-florestal_fixed_taxonomy <- list(projects=projects,
+data_fixed_taxonomy <- list(projects=projects,
                                  deployments=deployments,
                                  images=images)
 
-saveRDS(florestal_fixed_taxonomy, "01_entrada/dados_processados/florestal_fixed_taxonomy.rds")
+saveRDS(data_fixed_taxonomy, "01_entrada/dados_processados/data_fixed_taxonomy.rds")
 

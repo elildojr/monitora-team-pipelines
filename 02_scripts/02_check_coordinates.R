@@ -8,10 +8,10 @@ source("02_scripts/00_setup.R")
 
 
 #----- read data
-florestal_raw <- readRDS("01_entrada/dados_processados/florestal_raw.rds")
-projects <- florestal_raw$projects
-deployments <- florestal_raw$deployments
-images <- florestal_raw$images
+data_aggregated <- readRDS("01_entrada/dados_processados/data_aggregated.rds")
+projects <- data_aggregated$projects
+deployments <- data_aggregated$deployments
+images <- data_aggregated$images
 
 
 #----- check coordinates
@@ -42,10 +42,14 @@ deployments <- deployments %>%
 
 # juruena
 make_map(2002576)
-# remove "sem numero" sites from juruena project
+# there is an odd "sem numero" site in this project
+# this error must be identified and fixed in wildlife insights
+# for now lets remove "sem numero" from juruena project
 deployments <- deployments %>%
   filter(placename != "Sem-numero") %>%
   print()
+
+make_map(2002576)
 
 # maraca
 make_map(2002584)
@@ -61,7 +65,12 @@ make_map(2006780)
 
 # tapirape
 make_map(2007402)
-# tapirape is currently a mess. remove it altogether
+# tapirape is currently a mess. 
+# in wildlife insights, fix coordinates of:
+# CT-RBT-08, CT-RBT-09, CT-RBT-19, CT-RBT-28, CT-RBT-29, CT-RBT-36
+# there are a lot of additional sites whcih also seem to be out of place 
+# we have to check them all and fix in wildlife insights
+# for now, lets just remove the entire project from the dataset
 deployments <- deployments %>%
   filter(project_id != 2007402) %>%
   print()
@@ -92,8 +101,8 @@ images <- images %>%
 
 
 # save aggregated data
-florestal_fixed_coords <- list(projects=projects,
-                               deployments=deployments,
-                               images=images)
-saveRDS(florestal_fixed_coords, "01_entrada/dados_processados/florestal_fixed_coords.rds")
+data_fixed_coords <- list(projects=projects,
+                          deployments=deployments,
+                          images=images)
+saveRDS(data_fixed_coords, "01_entrada/dados_processados/data_fixed_coords.rds")
 
