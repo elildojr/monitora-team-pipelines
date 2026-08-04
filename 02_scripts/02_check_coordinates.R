@@ -45,9 +45,9 @@ make_map(2002576)
 # there is an odd "sem numero" site in this project
 # this error must be identified and fixed in wildlife insights
 # for now lets remove "sem numero" from juruena project
-deployments <- deployments %>%
-  filter(placename != "Sem-numero") %>%
-  print()
+# deployments <- deployments %>%
+#   filter(placename != "Sem-numero") %>%
+#   print()
 
 make_map(2002576)
 
@@ -71,9 +71,9 @@ make_map(2007402)
 # there are a lot of additional sites whcih also seem to be out of place 
 # we have to check them all and fix in wildlife insights
 # for now, lets just remove the entire project from the dataset
-deployments <- deployments %>%
-  filter(project_id != 2007402) %>%
-  print()
+# deployments <- deployments %>%
+#   filter(project_id != 2007402) %>%
+#   print()
 
 # jari
 make_map(2007439)
