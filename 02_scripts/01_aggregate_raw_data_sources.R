@@ -26,7 +26,8 @@ images_files
 images <- read_csv(images_files) %>%
   select(project_id, deployment_id, 
          class, order, family, genus, species,
-         timestamp, is_blank) %>%
+         timestamp, is_blank, identified_by) %>%
+  filter(identified_by != "Computer vision") %>%
   filter(is_blank == 0) %>%
   select(-is_blank) %>%
   filter(! is.na(genus)) %>%
