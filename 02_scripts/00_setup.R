@@ -6,7 +6,7 @@
 library(tidyverse)
 library(leaflet)
 library(jagsUI)
-
+library(usethis)
 
 #----- carregar funcoes
 source("02_scripts/funcoes/filter_independent.R")
