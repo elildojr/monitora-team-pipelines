@@ -34,6 +34,7 @@ global_targets <- images %>%
                        "Tapiridae",
                        "Myrmecophagidae",
                        "Cuniculidae", "Dasyproctidae", "Sciuridae")) %>%
+  filter(! genus %in% c("Caluromys", "Marmosa", "Monodelphis")) %>%
   group_by(class, order, family, genus, species) %>%
   count() %>%
   arrange(class, order, family, genus, species) %>%
