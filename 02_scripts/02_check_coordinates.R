@@ -35,10 +35,10 @@ make_map(2002554)
 # jamari
 make_map(2002562)
 # remove non-team sites from jamari project
-jamari_non_team_cams <- readRDS("01_entrada/dados_brutos/jamari-non-team-cams.rds")
-deployments <- deployments %>%
-  filter(! placename %in% jamari_non_team_cams) %>%
-  print()
+#jamari_non_team_cams <- readRDS("01_entrada/dados_brutos/jamari-non-team-cams.rds")
+#deployments <- deployments %>%
+#  filter(! placename %in% jamari_non_team_cams) %>%
+#  print()
 
 # juruena
 make_map(2002576)
