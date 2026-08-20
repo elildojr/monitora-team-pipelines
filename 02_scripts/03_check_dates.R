@@ -842,7 +842,10 @@ to_remove <- c("CT-JARI-27 2024-07-03", "CT-JARI-36 2024-06-29",
 #   ungroup() %>%
 #   print()
 
+#Comentários Ana - ago 2026 - CT-JARI-17 -> camera nao funcionou
+#corrigimos na plataforma, agora precisa apagar as fotos -> Elildo
 
+# CT_JARI-57 -> usar a claquete final como referência para corrigir data e hora. Pedir aos gestores se ainda possuem as fotos da claquete -> Elildo.
 
 calculate_time_lag(2007439, 2025)
 print(lags)
