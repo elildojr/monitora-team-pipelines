@@ -1,0 +1,489 @@
+---
+title: "Relatório de Auditoria de Coordenadas"
+subtitle: "Curadoria de dados de armadilhas fotográficas TEAM/Monitora"
+author: "Ana Carolina Ribeiro"
+date: last-modified
+lang: pt-BR
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    number-sections: true
+    code-fold: true
+    code-summary: "Mostrar código"
+    html-table-processing: none
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+required_packages <- c("dplyr", "fs", "knitr", "readr")
+
+missing_packages <- required_packages[
+  !vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)
+]
+
+if (length(missing_packages) > 0) {
+  stop(
+    "Instale os pacotes necessários antes de renderizar: ",
+    paste(missing_packages, collapse = ", "),
+    call. = FALSE
+  )
+}
+
+invisible(lapply(required_packages, library, character.only = TRUE))
+
+find_project_root <- function(start_directory = getwd()) {
+
+  current_directory <- normalizePath(
+    start_directory,
+    winslash = "/",
+    mustWork = TRUE
+  )
+
+  repeat {
+
+    project_file <- file.path(
+      current_directory,
+      "monitora-team-pipelines.Rproj"
+    )
+
+    if (file.exists(project_file)) {
+      return(current_directory)
+    }
+
+    parent_directory <- dirname(current_directory)
+
+    if (identical(parent_directory, current_directory)) {
+      stop(
+        "Não foi possível localizar 'monitora-team-pipelines.Rproj'. ",
+        "Renderize este relatório a partir do repositório oficial.",
+        call. = FALSE
+      )
+    }
+
+    current_directory <- parent_directory
+  }
+}
+
+project_root <- find_project_root()
+setwd(project_root)
+
+audit_tables_root <- fs::path(
+  "03_saida",
+  "auditoria_curadoria",
+  "tabelas"
+)
+
+audit_figures_root <- fs::path(
+  "03_saida",
+  "auditoria_curadoria",
+  "figuras"
+)
+
+if (!fs::dir_exists(audit_tables_root)) {
+  stop(
+    "A pasta de tabelas da auditoria não foi encontrada:\n",
+    audit_tables_root,
+    "\nExecute primeiro os scripts 00, 01 e 02 da auditoria.",
+    call. = FALSE
+  )
+}
+
+audit_runs <- fs::dir_ls(
+  audit_tables_root,
+  type = "directory",
+  recurse = FALSE
+)
+
+if (length(audit_runs) == 0) {
+  stop(
+    "Nenhuma rodada de auditoria foi encontrada.",
+    call. = FALSE
+  )
+}
+
+audit_run_id <- basename(sort(audit_runs, decreasing = TRUE))[1]
+
+audit_table_dir <- fs::path(audit_tables_root, audit_run_id)
+
+audit_figure_dir <- fs::path(
+  audit_figures_root,
+  audit_run_id
+)
+
+read_audit_table <- function(file_name) {
+
+  file_path <- fs::path(audit_table_dir, file_name)
+
+  if (!fs::file_exists(file_path)) {
+    stop(
+      "Arquivo obrigatório não encontrado:\n",
+      file_path,
+      "\nExecute novamente '02_auditar_coordenadas.R'.",
+      call. = FALSE
+    )
+  }
+
+  readr::read_csv(
+    file_path,
+    show_col_types = FALSE,
+    progress = FALSE
+  )
+}
+
+coordinate_summary <- read_audit_table(
+  "02_coordinate_summary.csv"
+)
+
+flag_dictionary <- read_audit_table(
+  "02_coordinate_flag_dictionary.csv"
+)
+
+flag_summary <- read_audit_table(
+  "02_coordinate_flag_summary.csv"
+)
+
+shared_coordinates <- read_audit_table(
+  "02_shared_coordinates_different_placenames.csv"
+)
+
+snapshot_file_check <- read_audit_table(
+  "02_snapshot_file_check.csv"
+)
+
+map_index <- read_audit_table(
+  "02_coordinate_map_index.csv"
+)
+
+metric_number <- function(metric_name) {
+
+  metric_value <- coordinate_summary |>
+    dplyr::filter(metric == metric_name) |>
+    dplyr::pull(value)
+
+  if (length(metric_value) != 1) {
+    return(NA_real_)
+  }
+
+  suppressWarnings(as.numeric(metric_value))
+}
+
+metric_labels <- c(
+  n_deployment_rows_raw = "Linhas brutas em deployments.csv",
+  n_unique_project_deployment_keys = "Deployments únicos",
+  n_coordinate_audit_records = "Deployments auditados",
+  n_duplicate_deployment_metadata = "Chaves de deployment duplicadas",
+  n_camera_metadata_conflicts = "Conflitos de metadados de câmera",
+  n_missing_placename = "Placenames ausentes",
+  n_missing_coordinate = "Coordenadas ausentes",
+  n_invalid_decimal_format = "Formato decimal inválido",
+  n_multiple_coordinate_values = "Mais de uma coordenada por deployment",
+  n_outside_world_range = "Coordenadas fora do intervalo mundial",
+  n_possible_latitude_longitude_swap =
+    "Possível inversão latitude–longitude",
+  n_outside_brazil_envelope = "Fora do envelope geográfico do Brasil",
+  n_shared_coordinates_different_placenames =
+    "Coordenadas compartilhadas entre placenames distintos",
+  n_station_shift_over_30_m =
+    "Estações com deslocamento superior a 30 m",
+  n_coordinate_records_for_review =
+    "Deployments sinalizados para revisão",
+  n_total_coordinate_flags = "Total de flags espaciais",
+  n_valid_coordinate_records_for_map =
+    "Registros válidos para os mapas",
+  n_station_coordinate_histories =
+    "Históricos de estações comparados"
+)
+
+summary_display <- coordinate_summary |>
+  dplyr::filter(metric != "audit_run_id") |>
+  dplyr::transmute(
+    Indicador = dplyr::recode(
+      metric,
+      !!!metric_labels,
+      .default = metric
+    ),
+    Valor = as.character(value)
+  )
+
+n_audited_deployments <- metric_number(
+  "n_coordinate_audit_records"
+)
+
+n_shared_groups <- nrow(shared_coordinates)
+
+n_shared_deployments <- sum(
+  shared_coordinates$n_deployments,
+  na.rm = TRUE
+)
+
+naming_variation_pairs <- c(
+  "CT-TDM-2-06 | CT-TDM-2-6",
+  "CT-TDM-2-07 | CT-TDM-2-7",
+  "CT-TDM-2-08 | CT-TDM-2-8"
+)
+
+shared_coordinates_interpreted <- shared_coordinates |>
+  dplyr::mutate(
+    interpretation = dplyr::case_when(
+      placenames %in% naming_variation_pairs ~
+        "Indício de variação de grafia: zero à esquerda.",
+
+      TRUE ~
+        "Revisão documental necessária antes de qualquer correção."
+    )
+  ) |>
+  dplyr::arrange(
+    project_id,
+    dplyr::desc(n_deployments)
+  )
+
+n_probable_naming_variations <- sum(
+  shared_coordinates_interpreted$placenames %in%
+    naming_variation_pairs
+)
+
+n_cases_requiring_review <- sum(
+  shared_coordinates_interpreted$interpretation ==
+    "Revisão documental necessária antes de qualquer correção."
+)
+```
+
+::: {.callout-note appearance="simple"}
+
+## Síntese executiva
+
+Esta auditoria avaliou `r format(n_audited_deployments, big.mark = ".", scientific = FALSE)` deployments únicos, sem modificar coordenadas, excluir registros ou corrigir metadados localmente.
+
+Foram identificados `r n_shared_groups` grupos de coordenadas associados a placenames distintos, envolvendo `r n_shared_deployments` deployments. Essas situações representam pendências de curadoria e não erros confirmados.
+
+:::
+
+# Identificação e finalidade
+
+**Rodada de auditoria:** `r audit_run_id`  
+**Dados auditados:** exports brutos do Wildlife Insights  
+**Objeto avaliado:** coordenadas dos deployments de armadilhas fotográficas TEAM/Monitora.
+
+O objetivo foi identificar inconsistências espaciais antes de qualquer correção no Wildlife Insights. Este documento apresenta resultados observados nos exports, pendências que exigem confirmação e limites da inferência baseada somente nos metadados disponíveis.
+
+# Métodos de auditoria
+
+A auditoria espacial foi conduzida pelo script `02_auditar_coordenadas.R`, a partir dos exports brutos importados pelo script `01_importar_exports_brutos.R`.
+
+Não foram aplicados filtros ecológicos, exclusões de imagens, correções de coordenadas ou padronizações automáticas de placenames.
+
+Foram verificados:
+
+1. presença de `placename`, latitude e longitude;
+2. formato numérico das coordenadas em graus decimais;
+3. limites geográficos mundiais válidos;
+4. possível inversão entre latitude e longitude;
+5. compatibilidade com um envelope geográfico amplo do Brasil;
+6. mais de uma coordenada atribuída ao mesmo deployment;
+7. coordenadas compartilhadas por placenames distintos;
+8. mudanças superiores a 30 m para a mesma estação entre campanhas;
+9. disponibilidade de mapas interativos para inspeção visual.
+
+O envelope geográfico do Brasil é uma triagem ampla. Ele não substitui a futura verificação dos pontos dentro dos polígonos oficiais das Unidades de Conservação.
+
+# Resultados
+
+## Resumo quantitativo
+
+```{r}
+#| label: tabela-resumo
+
+knitr::kable(
+  summary_display,
+  align = c("l", "r"),
+  caption = "Resumo dos resultados da auditoria de coordenadas."
+)
+```
+
+Não foram identificadas coordenadas ausentes, formato decimal inválido, valores fora do intervalo mundial, indícios de inversão entre latitude e longitude, pontos fora do envelope amplo do Brasil, mais de uma coordenada para o mesmo deployment ou mudanças superiores a 30 m para a mesma estação entre campanhas.
+
+## Flags espaciais
+
+```{r}
+#| label: tabela-flags
+
+if (nrow(flag_summary) == 0) {
+
+  cat("Nenhuma flag espacial foi identificada nesta rodada.")
+
+} else {
+
+  knitr::kable(
+    flag_summary,
+    caption = "Flags espaciais identificadas na rodada de auditoria."
+  )
+}
+```
+
+A única flag identificada foi `SHARED_COORDINATES_DIFFERENT_PLACENAMES`. Ela informa que a mesma coordenada foi atribuída a placenames distintos. A flag não permite concluir automaticamente que existe erro de coordenada.
+
+```{r}
+#| label: tabela-dicionario-flags
+
+knitr::kable(
+  flag_dictionary,
+  caption = "Definição operacional das flags espaciais."
+)
+```
+
+## Coordenadas compartilhadas
+
+Foram identificados `r n_shared_groups` grupos de coordenadas compartilhadas, distribuídos em três projetos e envolvendo `r n_shared_deployments` deployments.
+
+```{r}
+#| label: tabela-coordenadas-compartilhadas
+
+shared_summary_display <- shared_coordinates_interpreted |>
+  dplyr::transmute(
+    Projeto = project_id,
+    Longitude = longitude_num,
+    Latitude = latitude_num,
+    `Nº de deployments` = n_deployments,
+    Placenames = placenames,
+    `Interpretação inicial` = interpretation
+  )
+
+knitr::kable(
+  shared_summary_display,
+  caption = "Grupos de coordenadas compartilhadas entre placenames distintos."
+)
+```
+
+### Indícios de variação de grafia
+
+Em `r n_probable_naming_variations` grupos, a diferença entre placenames é compatível, preliminarmente, com a presença ou ausência de zero à esquerda:
+
+- `CT-TDM-2-06` e `CT-TDM-2-6`;
+- `CT-TDM-2-07` e `CT-TDM-2-7`;
+- `CT-TDM-2-08` e `CT-TDM-2-8`.
+
+Essas situações não constituem evidência de erro de coordenada. Caso as fichas de campo confirmem que representam a mesma estação, a medida apropriada será padronizar o `placename` no Wildlife Insights — e não alterar a coordenada.
+
+### Casos que exigem revisão documental
+
+Os `r n_cases_requiring_review` grupos restantes envolvem placenames aparentemente distintos. Com base somente nos exports, não é possível determinar se representam uma estação renomeada, uma coordenada reutilizada indevidamente ou duas câmeras instaladas intencionalmente no mesmo ponto.
+
+```{r}
+#| label: tabela-fila-revisao
+
+review_queue <- shared_coordinates_interpreted |>
+  dplyr::filter(
+    interpretation ==
+      "Revisão documental necessária antes de qualquer correção."
+  ) |>
+  dplyr::transmute(
+    Projeto = project_id,
+    Longitude = longitude_num,
+    Latitude = latitude_num,
+    `Placenames envolvidos` = placenames,
+    `Deployments envolvidos` = deployment_ids,
+    `Status da revisão` = "PENDENTE"
+  )
+
+knitr::kable(
+  review_queue,
+  caption = paste0(
+    "Pendências que exigem evidência documental antes de edição ",
+    "no Wildlife Insights."
+  )
+)
+```
+
+# Inspeção cartográfica
+
+Mapas interativos foram gerados para apoiar a inspeção visual dos deployments e das flags espaciais. Eles estão armazenados em:
+
+`r audit_figure_dir`
+
+```{r}
+#| label: tabela-indice-mapas
+
+knitr::kable(
+  map_index,
+  caption = "Índice dos mapas produzidos pela auditoria espacial."
+)
+```
+
+Os mapas fornecem evidência complementar, mas não substituem fichas de instalação, mapas da malha amostral, registros de campo ou metadados do Wildlife Insights.
+
+# Limites da auditoria atual
+
+Esta etapa não permite determinar automaticamente:
+
+- qual coordenada é correta quando dois placenames compartilham a mesma localização;
+- se duas câmeras foram instaladas intencionalmente no mesmo ponto;
+- se uma estação foi renomeada entre campanhas;
+- se a coordenada corresponde ao ponto físico de instalação;
+- se a estação está dentro da Unidade de Conservação correspondente;
+- se a data, a hora ou a identificação taxonômica das imagens estão corretas.
+
+Esses limites delimitam decisões que exigem evidência externa aos exports e impedem correções automáticas sem respaldo documental.
+
+# Encaminhamento de curadoria
+
+1. Conferir os casos pendentes nas fichas de instalação e na malha amostral.
+2. Verificar deployments e placenames correspondentes no Wildlife Insights.
+3. Registrar a evidência utilizada e a decisão tomada para cada pendência.
+4. Corrigir somente metadados confirmadamente inconsistentes, diretamente no Wildlife Insights.
+5. Baixar novamente os exports após as correções.
+6. Reexecutar os scripts 01 e 02 para verificar se a pendência foi resolvida.
+
+Nenhuma correção deve ser realizada apenas porque uma flag foi produzida pelo script.
+
+# Integridade e reprodutibilidade
+
+## Verificação dos arquivos da rodada
+
+```{r}
+#| label: tabela-integridade
+
+knitr::kable(
+  snapshot_file_check,
+  caption = "Verificação de integridade dos arquivos associados à rodada de auditoria."
+)
+```
+
+## Ambiente computacional
+
+```{r}
+#| label: sessao-r
+#| echo: true
+
+sessionInfo()
+```
+---
+
+## Quarto
+
+Quarto enables you to weave together content and executable code into a finished document. To learn more about Quarto see <https://quarto.org>.
+
+## Running Code
+
+When you click the **Render** button a document will be generated that includes both content and the output of embedded code. You can embed code like this:
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this
+
+```{r}
+#| echo: false
+2 * 2
+```
+
+The `echo: false` option disables the printing of code (only output is displayed).
