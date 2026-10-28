@@ -7,6 +7,7 @@
 *.txt
 *.csv
 *.xlsx
+*.pdf
 github-token.R
 .positai
 bin/
