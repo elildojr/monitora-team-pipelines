@@ -133,6 +133,8 @@ audit_package_versions <- tibble(
 audit_result_filename <- "auditoria_curadoria.rds"
 audit_result_file <- file.path(audit_processed_dir, audit_result_filename)
 audit_nearby_threshold_m <- 500
+audit_date_gap_days <- 7
+audit_min_deployment_days <- 5
 
 audit_new_result <- function(run_id) {
   list(
@@ -146,7 +148,8 @@ audit_new_result <- function(run_id) {
     ),
     importacao = NULL,
     coordenadas = NULL,
-    unidades_amostrais = NULL
+    unidades_amostrais = NULL,
+    datas_horas = NULL
   )
 }
 
