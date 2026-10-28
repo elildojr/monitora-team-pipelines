@@ -1,5 +1,5 @@
 # ============================================================
-# 00_setup_auditoria.R
+# 00_setup_curadoria.R
 # Setup exclusivo do fluxo de auditoria e curadoria.
 #
 # Este script:
@@ -86,27 +86,6 @@ audit_processed_dir <- file.path(
   "auditoria_curadoria"
 )
 
-audit_output_dir <- file.path(
-  audit_project_root,
-  "03_saida",
-  "auditoria_curadoria"
-)
-
-audit_tables_dir <- file.path(
-  audit_output_dir,
-  "tabelas"
-)
-
-audit_figures_dir <- file.path(
-  audit_output_dir,
-  "figuras"
-)
-
-audit_logs_dir <- file.path(
-  audit_output_dir,
-  "logs"
-)
-
 audit_functions_dir <- file.path(
   audit_project_root,
   "02_scripts",
@@ -128,9 +107,7 @@ if (!dir.exists(audit_raw_dir)) {
 }
 
 audit_directories <- c(
-  audit_processed_dir,
-  audit_output_dir,
-  audit_tables_dir
+  audit_processed_dir
 )
 
 invisible(
@@ -157,6 +134,73 @@ audit_package_versions <- tibble(
     character(1)
   )
 )
+
+
+#----- formato único dos resultados e critérios comuns
+
+audit_result_filename <- "auditoria_curadoria.rds"
+audit_result_file <- file.path(audit_processed_dir, audit_result_filename)
+audit_nearby_threshold_m <- 500
+
+audit_new_result <- function(run_id) {
+  list(
+    metadata = list(
+      audit_run_id = run_id,
+      created_at_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
+      nearby_threshold_m = audit_nearby_threshold_m,
+      sampling_unit = "project_id + placename_key; cada placename identifica uma unidade amostral",
+      local_correction = "not applied",
+      local_exclusion = "not applied"
+    ),
+    importacao = NULL,
+    coordenadas = NULL,
+    unidades_amostrais = NULL
+  )
+}
+
+audit_read_result <- function(required = TRUE) {
+  if (file.exists(audit_result_file)) {
+    return(readRDS(audit_result_file))
+  }
+  # Leitura de importações antigas; novas gravações usam somente o caminho fixo.
+  legacy_pointer <- file.path(audit_processed_dir, "AUDIT_CURRENT_RUN.txt")
+  if (file.exists(legacy_pointer)) {
+    legacy_run_id <- trimws(readLines(legacy_pointer, n = 1, warn = FALSE))
+    if (length(legacy_run_id) == 1L && !is.na(legacy_run_id) &&
+        grepl("^[0-9]{8}_[0-9]{6}$", legacy_run_id)) {
+      legacy_import_file <- file.path(audit_processed_dir, legacy_run_id, "01_import_log.rds")
+      if (file.exists(legacy_import_file)) {
+        result <- audit_new_result(legacy_run_id)
+        result$importacao <- readRDS(legacy_import_file)
+        return(result)
+      }
+    }
+  }
+  if (required) {
+    stop("Importação da rodada não encontrada. Execute 01_importar_exports_brutos.R.", call. = FALSE)
+  }
+  NULL
+}
+
+audit_save_result <- function(result) {
+  result$metadata$updated_at_utc <- format(Sys.time(), tz = "UTC", usetz = TRUE)
+  saveRDS(result, audit_result_file, compress = "gzip")
+  invisible(result)
+}
+
+audit_same_inputs <- function(previous_manifest, current_manifest) {
+  required_columns <- c("source_file", "md5")
+  if (!is.data.frame(previous_manifest) ||
+      !all(required_columns %in% names(previous_manifest)) ||
+      nrow(previous_manifest) != nrow(current_manifest)) {
+    return(FALSE)
+  }
+  previous <- previous_manifest[order(previous_manifest$source_file), required_columns]
+  current <- current_manifest[order(current_manifest$source_file), required_columns]
+  !anyNA(previous$md5) && !anyNA(current$md5) &&
+    identical(as.character(previous$source_file), as.character(current$source_file)) &&
+    identical(as.character(previous$md5), as.character(current$md5))
+}
 
 
 #----- carregar apenas funções da auditoria

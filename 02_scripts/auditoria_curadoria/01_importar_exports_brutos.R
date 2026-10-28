@@ -9,9 +9,10 @@
 # - nenhuma coordenada ou timestamp é convertido nesta etapa;
 # - nenhum image_id é removido ou deduplicado;
 # - os arquivos brutos originais permanecem intocados;
-# - cada execução cria uma rodada de auditoria independente;
-# - as correções serão feitas sempre no Wildlife Insights.
-# - a cópia RDS grande é opcional; os CSVs originais são preservados.
+# - os mesmos exports reutilizam a rodada atual;
+# - exports alterados iniciam uma nova rodada;
+# - um único RDS, em caminho fixo, reúne os resultados atuais;
+# - não são feitas correções nesta etapa.
 #
 # Atenção:
 # O diretório 01_entrada/dados_brutos deve conter apenas um
@@ -112,51 +113,6 @@ if (length(images_files) == 0) {
 }
 
 
-#----- criar identificador desta rodada de auditoria
-
-audit_run_id <- format(
-  Sys.time(),
-  format = "%Y%m%d_%H%M%S",
-  tz = "UTC"
-)
-
-audit_run_processed_dir <- file.path(
-  audit_processed_dir,
-  audit_run_id
-)
-
-audit_run_tables_dir <- file.path(
-  audit_tables_dir,
-  audit_run_id
-)
-
-if (
-  dir.exists(audit_run_processed_dir) ||
-  dir.exists(audit_run_tables_dir)
-) {
-  stop(
-    paste0(
-      "Já existe uma rodada com o identificador ",
-      audit_run_id,
-      ". Execute novamente para gerar um novo identificador."
-    ),
-    call. = FALSE
-  )
-}
-
-dir.create(
-  audit_run_processed_dir,
-  recursive = TRUE,
-  showWarnings = FALSE
-)
-
-dir.create(
-  audit_run_tables_dir,
-  recursive = TRUE,
-  showWarnings = FALSE
-)
-
-
 #----- registrar proveniência dos arquivos importados
 
 audit_input_files <- c(
@@ -181,6 +137,25 @@ audit_input_manifest <- tibble(
     tools::md5sum(audit_input_files)
   )
 )
+
+
+#----- reutilizar a rodada se o conteúdo dos exports não mudou
+
+audit_result <- NULL
+audit_reused_run <- FALSE
+previous_result <- audit_read_result(required = FALSE)
+if (!isTRUE(getOption("monitora.nova_rodada", FALSE)) &&
+    !is.null(previous_result) &&
+    audit_same_inputs(previous_result$importacao$input_manifest, audit_input_manifest)) {
+  audit_run_id <- previous_result$metadata$audit_run_id
+  audit_result <- previous_result
+  audit_reused_run <- TRUE
+}
+
+if (!audit_reused_run) {
+  audit_run_id <- format(Sys.time(), "%Y%m%d_%H%M%S", tz = "UTC")
+  audit_result <- audit_new_result(audit_run_id)
+}
 
 
 #----- definir campos necessários à auditoria
@@ -723,45 +698,10 @@ audit_import_log <- list(
 )
 
 
-#----- salvar resultados desta rodada
+#----- atualizar o único arquivo de resultados desta rodada
 
-audit_raw_exports_file <- file.path(
-  audit_run_processed_dir,
-  "audit_raw_exports.rds"
-)
-
-audit_import_log_file <- file.path(
-  audit_run_processed_dir,
-  "01_import_log.rds"
-)
-
-audit_save_raw_snapshot <- isTRUE(getOption("monitora.salvar_snapshot", FALSE))
-if (audit_save_raw_snapshot) {
-  saveRDS(audit_raw_exports, audit_raw_exports_file, compress = "gzip")
-}
-
-saveRDS(
-  audit_import_log,
-  audit_import_log_file,
-  compress = "gzip"
-)
-
-# Resumo legível. Detalhes, problemas e hashes ficam reunidos no log RDS.
-readr::write_csv(import_summary, file.path(audit_run_tables_dir, "01_resumo_importacao.csv"))
-
-
-#----- registrar a rodada mais recente após salvar todos os arquivos
-
-audit_current_run_file <- file.path(
-  audit_processed_dir,
-  "AUDIT_CURRENT_RUN.txt"
-)
-
-writeLines(
-  audit_run_id,
-  audit_current_run_file,
-  useBytes = TRUE
-)
+audit_result$importacao <- audit_import_log
+audit_result <- audit_save_result(audit_result)
 
 
 #----- apresentar resumo no console
@@ -780,13 +720,5 @@ message(
   audit_run_id
 )
 
-if (audit_save_raw_snapshot) {
-  message("\nCópia dos dados brutos salva em:\n", audit_raw_exports_file)
-} else {
-  message("\nCópia RDS dos dados brutos não gerada; os CSVs originais foram preservados.")
-}
-
-message(
-  "\nTabelas da importação salvas em:\n",
-  audit_run_tables_dir
-)
+if (audit_reused_run) message("Os exports são os mesmos; a rodada existente foi reutilizada.")
+message("\nArquivo único de resultados:\n", audit_result_file)

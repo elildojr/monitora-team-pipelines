@@ -8,12 +8,13 @@
 # - não exclui deployments;
 # - preserva longitude e latitude como texto bruto;
 # - cria uma tabela derivada, com uma linha por deployment;
-# - gera flags para revisão no Wildlife Insights; o mapa é opcional.
+# - identifica possíveis inconsistências, sem executar correções;
+# - investiga proximidade inferior a 500 m e histórico anual das unidades;
+# - atualiza somente auditoria_curadoria.rds, em caminho fixo.
 #
 # Limite desta etapa:
 # Este script não testa se cada ponto está dentro da respectiva
-# Unidade de Conservação, pois isso exigirá polígonos oficiais
-# das UCs. Ele verifica integridade, formato, domínio, duplicações
+# Unidade de Conservação. Ele verifica integridade, formato, domínio, duplicações
 # espaciais e estabilidade das estações entre anos.
 # ============================================================
 
@@ -38,99 +39,14 @@ brazil_latitude_min <- -35
 brazil_latitude_max <- 6
 
 
-#----- localizar a rodada de auditoria mais recente
+#----- ler os resultados atuais no arquivo único
 
-audit_current_run_file <- file.path(
-  audit_processed_dir,
-  "AUDIT_CURRENT_RUN.txt"
-)
-
-if (!file.exists(audit_current_run_file)) {
-  stop(
-    paste0(
-      "O arquivo AUDIT_CURRENT_RUN.txt não foi encontrado em:\n",
-      audit_processed_dir,
-      "\n\nExecute primeiro o script ",
-      "01_importar_exports_brutos.R."
-    ),
-    call. = FALSE
-  )
+audit_result <- audit_read_result()
+audit_import_log <- audit_result$importacao
+if (is.null(audit_import_log$input_manifest)) {
+  stop("Importação não encontrada. Execute 01_importar_exports_brutos.R.", call. = FALSE)
 }
-
-audit_run_id <- readLines(
-  audit_current_run_file,
-  n = 1,
-  warn = FALSE
-)
-
-if (
-  length(audit_run_id) != 1 ||
-  is.na(audit_run_id) ||
-  stringr::str_trim(audit_run_id) == ""
-) {
-  stop(
-    "AUDIT_CURRENT_RUN.txt não contém um identificador de rodada válido.",
-    call. = FALSE
-  )
-}
-
-audit_run_processed_dir <- file.path(
-  audit_processed_dir,
-  audit_run_id
-)
-
-audit_run_tables_dir <- file.path(
-  audit_tables_dir,
-  audit_run_id
-)
-
-audit_run_figures_dir <- file.path(
-  audit_figures_dir,
-  audit_run_id
-)
-
-audit_import_log_file <- file.path(
-  audit_run_processed_dir,
-  "01_import_log.rds"
-)
-
-if (!file.exists(audit_import_log_file)) {
-  stop(
-    paste0(
-      "O log da importação não foi encontrado:\n",
-      audit_import_log_file,
-      "\n\nExecute novamente o script ",
-      "01_importar_exports_brutos.R."
-    ),
-    call. = FALSE
-  )
-}
-
-dir.create(
-  audit_run_tables_dir,
-  recursive = TRUE,
-  showWarnings = FALSE
-)
-
-
-#----- ler o log da importação
-
-audit_import_log <- readRDS(
-  audit_import_log_file
-)
-
-if (
-  is.null(audit_import_log$input_manifest) ||
-  is.null(audit_import_log$audit_run_id)
-) {
-  stop(
-    paste0(
-      "O arquivo 01_import_log.rds não possui a estrutura esperada. ",
-      "Execute novamente 01_importar_exports_brutos.R."
-    ),
-    call. = FALSE
-  )
-}
+audit_run_id <- audit_result$metadata$audit_run_id
 
 
 #----- confirmar que os CSVs atuais são idênticos ao snapshot
@@ -391,85 +307,6 @@ max_pairwise_distance_m <- function(
       sf::st_distance(points)
     )
   )
-}
-
-
-save_coordinate_map <- function(
-    data,
-    output_file,
-    uc_boundaries
-) {
-  
-  if (nrow(data) == 0) {
-    return(invisible(FALSE))
-  }
-  
-  # A etiqueta é posicionada no interior de cada UC. A geometria original
-  # é usada para os limites; não modifica nem filtra os pontos.
-  uc_labels <- uc_boundaries |>
-    sf::st_transform(3857) |>
-    sf::st_point_on_surface() |>
-    sf::st_transform(4326)
-
-  coordinate_map <- leaflet::leaflet(data = data, height = 650) |>
-    leaflet::addProviderTiles(
-      leaflet::providers$Esri.WorldImagery,
-      group = "Imagem de satélite"
-    ) |>
-    leaflet::addProviderTiles(
-      leaflet::providers$OpenStreetMap,
-      group = "Mapa de referência"
-    ) |>
-    leaflet::addPolygons(
-      data = uc_boundaries,
-      group = "Limites das UCs",
-      color = "#20bfff", weight = 2, opacity = 1,
-      fillColor = "#20bfff", fillOpacity = 0.06,
-      label = ~nome_uc,
-      popup = ~paste0(
-        "<strong>Unidade de conservação:</strong> ",
-        htmltools::htmlEscape(nome_uc),
-        "<br><strong>Código CNUC:</strong> ",
-        htmltools::htmlEscape(cnuc),
-        "<br><strong>Projeto Wildlife Insights:</strong> ",
-        htmltools::htmlEscape(project_id)
-      )
-    ) |>
-    leaflet::addLabelOnlyMarkers(
-      data = uc_labels, group = "Limites das UCs", label = ~nome_uc,
-      labelOptions = leaflet::labelOptions(
-        noHide = TRUE, direction = "auto", textOnly = FALSE,
-        style = list("font-weight" = "bold", "font-size" = "11px")
-      )
-    ) |>
-    leaflet::addCircleMarkers(
-      data = data, group = "Pontos de instalação",
-      lng = ~longitude_num, lat = ~latitude_num,
-      radius = 5, stroke = TRUE, weight = 1,
-      color = ~map_colour, fillColor = ~map_colour,
-      fillOpacity = 0.85, popup = ~popup_text,
-      label = ~project_short_name
-    ) |>
-    leaflet::addLayersControl(
-      baseGroups = c("Imagem de satélite", "Mapa de referência"),
-      overlayGroups = c("Limites das UCs", "Pontos de instalação"),
-      options = leaflet::layersControlOptions(collapsed = FALSE)
-    ) |>
-    leaflet::addLegend(
-      position = "bottomright",
-      colors = c("#20bfff", "#1B9E77", "#D95F02"),
-      labels = c("Limite da UC", "Ponto sem sinalização", "Ponto para revisar"),
-      title = "Auditoria de coordenadas", opacity = 1
-    ) |>
-    leaflet::addScaleBar(position = "bottomleft")
-
-  htmlwidgets::saveWidget(
-    coordinate_map,
-    file = output_file,
-    selfcontained = FALSE
-  )
-  
-  invisible(TRUE)
 }
 
 
@@ -1142,113 +979,6 @@ coordinate_summary <- tibble(
 )
 
 
-#----- produzir mapas de auditoria visual
-
-map_data <- deployment_coordinate_audit |>
-  filter(valid_coordinate_for_geometry) |>
-  mutate(
-    map_colour = dplyr::if_else(
-      coordinate_status == "OK",
-      "#1B9E77",
-      "#D95F02"
-    ),
-    
-    popup_text = paste0(
-      "<strong>Projeto:</strong> ",
-      project_short_name,
-      " (", project_id, ")",
-      "<br><strong>Deployment:</strong> ",
-      deployment_id,
-      "<br><strong>Estação:</strong> ",
-      placename_raw,
-      "<br><strong>Longitude:</strong> ",
-      longitude_num,
-      "<br><strong>Latitude:</strong> ",
-      latitude_num,
-      "<br><strong>Status:</strong> ",
-      coordinate_status,
-      "<br><strong>Flags:</strong> ",
-      dplyr::if_else(
-        coordinate_status == "OK",
-        "Nenhuma",
-        coordinate_flag_codes
-      )
-    )
-  )
-
-map_index <- tibble(
-  map_scope = character(),
-  project_id = character(),
-  project_short_name = character(),
-  map_file = character()
-)
-
-audit_make_map <- isTRUE(getOption("monitora.gerar_mapa", FALSE))
-
-if (audit_make_map && nrow(map_data) > 0) {
-  
-  if (!requireNamespace("htmlwidgets", quietly = TRUE) ||
-      !requireNamespace("leaflet", quietly = TRUE)) {
-    warning(
-      paste0(
-        "Os pacotes leaflet e htmlwidgets são necessários para gerar o mapa. ",
-        "As tabelas da auditoria foram geradas, mas os mapas HTML não."
-      ),
-      call. = FALSE
-    )
-  } else {
-    
-    dir.create(audit_run_figures_dir, recursive = TRUE, showWarnings = FALSE)
-    uc_file <- file.path(
-      audit_project_root, "01_entrada", "dados_referencia",
-      "limites_ucs_icmbio_202608.geojson"
-    )
-    if (!file.exists(uc_file)) {
-      stop("Arquivo de limites das UCs não encontrado: ", uc_file,
-           "\nCopie o GeoJSON distribuído com os scripts para esta pasta.",
-           call. = FALSE)
-    }
-    uc_boundaries <- sf::st_read(uc_file, quiet = TRUE)
-    required_uc_fields <- c("project_id", "cnuc", "nome_uc")
-    if (!all(required_uc_fields %in% names(uc_boundaries)) ||
-        is.na(sf::st_crs(uc_boundaries))) {
-      stop("A camada de UCs não possui os campos ou o CRS esperados.", call. = FALSE)
-    }
-    uc_boundaries <- sf::st_transform(uc_boundaries, 4326)
-    uc_boundaries <- uc_boundaries[
-      uc_boundaries$project_id %in% unique(map_data$project_id), , drop = FALSE
-    ]
-    missing_uc <- setdiff(unique(map_data$project_id), uc_boundaries$project_id)
-    if (length(missing_uc) > 0) {
-      stop("Não há limite de UC para os projetos: ",
-           paste(missing_uc, collapse = ", "), call. = FALSE)
-    }
-    all_projects_map_file <- file.path(
-      audit_run_figures_dir,
-      "02_coordinate_map_all_projects.html"
-    )
-    
-    save_coordinate_map(
-      map_data,
-      all_projects_map_file,
-      uc_boundaries
-    )
-    
-    map_index <- bind_rows(
-      map_index,
-      tibble(
-        map_scope = "all_projects",
-        project_id = NA_character_,
-        project_short_name = NA_character_,
-        map_file = all_projects_map_file
-      )
-    )
-    
-
-  }
-}
-
-
 #----- reunir e salvar resultados da auditoria espacial
 
 coordinate_audit_output <- list(
@@ -1287,74 +1017,34 @@ coordinate_audit_output <- list(
   station_coordinate_history =
     station_coordinate_history,
   station_coordinate_changes_over_threshold =
-    station_coordinate_changes_over_threshold,
-  map_index = map_index
+    station_coordinate_changes_over_threshold
 )
 
-coordinate_audit_output_file <- file.path(
-  audit_run_processed_dir,
-  "02_coordinate_audit.rds"
-)
+#----- proximidade e histórico das unidades amostrais
+# Os critérios de proximidade usam o valor central de 500 m definido no setup.
+# Cada placename de comparação identifica uma unidade amostral no projeto.
 
-saveRDS(
-  coordinate_audit_output,
-  coordinate_audit_output_file,
-  compress = "gzip"
+unit_audit_output <- audit_station_spatiotemporal(
+  deployment_coordinate_audit,
+  nearby_threshold_m = audit_nearby_threshold_m
 )
+unit_audit_output$metadata$audit_run_id <- audit_run_id
 
-# Apenas tabelas diretamente úteis à revisão. As demais estão no RDS.
-readr::write_csv(
-  filter(deployment_coordinate_audit, coordinate_status == "REVIEW"),
-  file.path(audit_run_tables_dir, "02_coordenadas_para_revisao.csv")
-)
-readr::write_csv(
-  shared_coordinates_different_placenames,
-  file.path(audit_run_tables_dir, "02_coordenadas_compartilhadas.csv")
-)
+audit_result$metadata$nearby_threshold_m <- audit_nearby_threshold_m
+audit_result$coordenadas <- coordinate_audit_output
+audit_result$unidades_amostrais <- unit_audit_output
+audit_result <- audit_save_result(audit_result)
 
 
 #----- apresentar resultados no console
 
-message(
-  "\nAuditoria de coordenadas concluída sem correções locais."
-)
-
-print(
-  coordinate_summary,
-  n = Inf
-)
-
+message("Auditoria dos dados concluída sem correções ou exclusões.")
+print(coordinate_summary, n = Inf)
 if (nrow(coordinate_flag_summary) > 0) {
-  
-  message("\nResumo das flags espaciais:")
-  
-  print(
-    coordinate_flag_summary,
-    n = Inf
-  )
+  message("Sinalizações espaciais:")
+  print(coordinate_flag_summary, n = Inf)
 }
-
-message(
-  "\nObjeto da auditoria espacial salvo em:\n",
-  coordinate_audit_output_file
-)
-
-message(
-  "\nTabelas da auditoria espacial salvas em:\n",
-  audit_run_tables_dir
-)
-
-if (nrow(map_index) > 0) {
-  message(
-    "\nMapas de auditoria visual salvos em:\n",
-    audit_run_figures_dir
-  )
-}
-
-message(
-  "\nObservação: a verificação de pontos dentro das Unidades ",
-  "de Conservação será feita em etapa posterior, com polígonos ",
-  "oficiais das UCs."
-)
-
-# Para examinar a tabela na sessão interativa: View(shared_coordinates_different_placenames)
+message("Proximidade entre unidades amostrais: menos de ", audit_nearby_threshold_m, " m.")
+print(unit_audit_output$summary, row.names = FALSE)
+message("Arquivo único de resultados: ", audit_result_file)
+message("O pertencimento aos polígonos das UCs não foi avaliado nesta etapa.")

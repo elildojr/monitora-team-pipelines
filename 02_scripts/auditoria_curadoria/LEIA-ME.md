@@ -1,52 +1,78 @@
-# Auditoria e mapas no RStudio
+# Auditoria dos dados TEAM/Monitora
 
-Esta proposta contém três scripts revisados e uma camada com os limites de 15 UCs. O mapa é gerado pelo R, mas somente quando a opção `monitora.gerar_mapa` é ativada. O código passou pela verificação de sintaxe; ainda precisa ser executado e conferido no RStudio, pois os pacotes R instalados no computador não estavam acessíveis ao ambiente que preparou estes arquivos.
+A auditoria identifica possíveis inconsistências. Não corrige coordenadas, nomes ou datas, não exclui registros e não edita o Wildlife Insights.
 
-## 1. Instalar os arquivos no projeto
+## Resultado único e caminho fixo
 
-Abra `monitora-team-pipelines.Rproj` no RStudio. Faça uma cópia de segurança dos três scripts atuais e substitua-os pelos três arquivos `.R` deste pacote na pasta `02_scripts/auditoria_curadoria/`.
+Os scripts atualizam somente este arquivo de resultados:
 
-Copie a pasta `01_entrada/dados_referencia/` deste pacote para dentro da pasta do projeto, preservando o caminho. O arquivo que o script usa é:
-
-```
-01_entrada/dados_referencia/limites_ucs_icmbio_202608.geojson
+```text
+01_entrada/dados_processados/auditoria_curadoria/auditoria_curadoria.rds
 ```
 
-Leia `FONTE.md` e revise a tabela `projetos_e_ucs.csv` nessa mesma pasta. Os nomes e códigos CNUC foram relacionados aos códigos dos projetos com base nos exports, mas a equipe deve conferir os vínculos. Um projeto que abranja mais de uma UC exigirá adaptação. Não altere os arquivos brutos.
+O arquivo contém três blocos, com os mesmos nomes utilizados pelos scripts e pelo QMD:
 
-Instale os pacotes, se necessário:
+- `importacao`: resumo dos exports, problemas de leitura e vínculos entre os dados;
+- `coordenadas`: coordenadas por deployment e possíveis inconsistências espaciais;
+- `unidades_amostrais`: proximidade, períodos de operação e histórico anual das unidades.
 
-```r
-install.packages(c("tidyverse", "lubridate", "fs", "sf", "leaflet", "htmlwidgets"))
-```
+As etapas atualizam o mesmo RDS. Não são criadas subpastas por execução, CSVs de resumo, logs separados, cópias grandes das imagens ou mapas HTML independentes. O identificador da rodada fica nos metadados do RDS. Se os exports não mudaram, o identificador é reutilizado; se mudaram, a importação substitui os resultados atuais e a etapa 02 precisa ser executada novamente.
 
-## 2. Executar a auditoria e gerar o mapa
+Os arquivos e as pastas das versões anteriores não são apagados. O novo RDS representa o conjunto atual, e não um histórico de todas as execuções.
 
-Com um conjunto ativo de exports em `01_entrada/dados_brutos/`, execute:
+## Execução no RStudio
+
+Abra `monitora-team-pipelines.Rproj` e mantenha um conjunto ativo de exports em `01_entrada/dados_brutos/`.
+
+Na importação dos dados, execute:
 
 ```r
 source("02_scripts/auditoria_curadoria/01_importar_exports_brutos.R", encoding = "UTF-8")
-options(monitora.gerar_mapa = TRUE)
+```
+
+Para auditar coordenadas, proximidade e histórico anual, execute:
+
+```r
 source("02_scripts/auditoria_curadoria/02_auditar_coordenadas.R", encoding = "UTF-8")
-options(monitora.gerar_mapa = FALSE)
 ```
 
-A primeira linha cria uma nova rodada. Se a importação já foi concluída e os arquivos de entrada não mudaram, você pode executar somente as três últimas linhas para gerar o mapa da rodada mais recente. Para que uma execução posterior também gere mapa, ative a opção novamente.
+A etapa 02 inclui as investigações das unidades amostrais. Não é necessário executar uma terceira etapa para gerar esses resultados. No primeiro uso, a etapa 02 também pode aproveitar uma importação do formato anterior indicada por `AUDIT_CURRENT_RUN.txt`, sem reimportar as imagens; ela passa a gravar no caminho fixo.
 
-O console informa a pasta da rodada. O mapa `02_coordinate_map_all_projects.html` fica em `03_saida/auditoria_curadoria/figuras/<rodada>/`. Ele contém os pontos e os limites com nomes das UCs, além de uma opção de imagem de satélite e outra de mapa de referência. Use o seletor para escolher o fundo ou mostrar e ocultar camadas. O fundo é buscado pela internet; o HTML não inclui as imagens de satélite. Ao compartilhar o HTML, mantenha também a pasta de recursos criada junto dele.
+Depois, abra `04_reports/Relatório de Auditoria de Coordenadas.qmd` e use **Render** no RStudio. O QMD somente lê o RDS fixo e apresenta a auditoria dos dados. O HTML é gerado pela renderização do relatório, sempre no mesmo local.
 
-A camada mostra os limites selecionados, mas não determina automaticamente se um ponto está correto ou errado. Pontos podem estar fora do limite por diferentes razões e devem ser interpretados no contexto do projeto. A auditoria com polígonos e suas regras ainda precisa ser definida separadamente.
+## Mapa das possíveis inconsistências
 
-## 3. Resultados essenciais
+O QMD chama a função `funcoes/mapa_conflitos_coordenadas.R` para mostrar o mapa dentro do próprio relatório. Não é salvo um HTML de mapa separado. O mapa usa os resultados já calculados no RDS fixo, com o mesmo limiar de proximidade.
 
-As tabelas ficam em `03_saida/auditoria_curadoria/tabelas/<rodada>/`: resumo da importação, coordenadas para revisão e coordenadas compartilhadas entre nomes de estação. Os detalhes e hashes ficam em `01_entrada/dados_processados/auditoria_curadoria/<rodada>/` como arquivos RDS. A cópia RDS grande dos dados de imagem é opcional:
+Os pontos mostram sinalizações de coordenadas/metadados, proximidade no mesmo ano e proximidade histórica. Os conteúdos dos marcadores incluem unidades amostrais, deployments, anos e histórico anual. As linhas conectam pares próximos no mesmo ano. Há imagem de satélite, mapa de referência e limites locais das UCs com seus nomes.
+
+Para consultar no Viewer do RStudio, sem renderizar o relatório:
 
 ```r
-options(monitora.salvar_snapshot = TRUE)
-source("02_scripts/auditoria_curadoria/01_importar_exports_brutos.R", encoding = "UTF-8")
-options(monitora.salvar_snapshot = FALSE)
+source("02_scripts/auditoria_curadoria/funcoes/mapa_conflitos_coordenadas.R", encoding = "UTF-8")
+auditoria <- readRDS("01_entrada/dados_processados/auditoria_curadoria/auditoria_curadoria.rds")
+mapa_conflitos_coordenadas(auditoria)
 ```
 
-Por padrão, os CSVs originais continuam como fonte completa e nenhuma cópia grande é gravada. Futuras etapas que dependam desse RDS precisarão ativar a opção ou ler os CSVs. Nenhum resultado de rodadas anteriores é apagado automaticamente.
+Para visualizar somente Juruena, use `mapa_conflitos_coordenadas(auditoria, project_id = "2002576")`. São necessários os pacotes `leaflet`, `htmltools` e `sf`. O fundo cartográfico depende de conexão com a internet.
 
-As versões do R e dos pacotes são registradas no log, mas não estão travadas. Para reprodução em outro computador, compartilhe os mesmos exports, o GeoJSON, os scripts e as versões de software; o GitHub ignora alguns arquivos de dados neste repositório, então confirme quais arquivos precisam ser compartilhados fora dele.
+## Termos e critérios comuns
+
+- **Unidade amostral:** cada `placename` de comparação dentro de um projeto. Um nome em outro projeto é outra unidade.
+- **Deployment:** período de instalação e operação associado à unidade amostral.
+- **Proximidade:** distância geográfica estritamente inferior a **500 m** entre unidades distintas no mesmo projeto. O valor é definido uma única vez em `audit_nearby_threshold_m`, no script 00.
+- **Coincidência temporal:** comparação dos anos de operação e das datas de início e fim. Estar no mesmo ano não implica sobreposição dos períodos.
+- **Deslocamento da mesma unidade:** critério separado de proximidade; mantém o limiar de 30 m entre coordenadas atribuídas ao mesmo `placename`.
+- **Histórico anual:** presença por ano de início do deployment, considerando os anos com dados do próprio projeto. Distingue lacunas, reaparecimentos e ausência em anos posteriores disponíveis.
+
+Ausência nos exports não confirma descontinuação. Proximidade ou compartilhamento de coordenadas não confirma erro. A verificação automática de pertencimento aos polígonos das UCs não integra esta etapa.
+
+## Consulta dos resultados
+
+```r
+auditoria <- readRDS("01_entrada/dados_processados/auditoria_curadoria/auditoria_curadoria.rds")
+View(auditoria$coordenadas$deployment_coordinate_audit)
+View(auditoria$unidades_amostrais$nearby_unit_pairs)
+View(auditoria$unidades_amostrais$station_temporal_history)
+View(auditoria$unidades_amostrais$station_year_presence)
+```
