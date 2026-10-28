@@ -38,7 +38,9 @@ source("02_scripts/auditoria_curadoria/02_auditar_coordenadas.R", encoding = "UT
 
 A etapa 02 inclui as investigações das unidades amostrais. Não é necessário executar uma terceira etapa para gerar esses resultados. No primeiro uso, a etapa 02 também pode aproveitar uma importação do formato anterior indicada por `AUDIT_CURRENT_RUN.txt`, sem reimportar as imagens; ela passa a gravar no caminho fixo.
 
-Depois, abra `04_reports/Relatório de Auditoria de Coordenadas.qmd` e use **Render** no RStudio. O QMD somente lê o RDS fixo e apresenta a auditoria dos dados. O HTML é gerado pela renderização do relatório, sempre no mesmo local.
+Depois, abra `04_reports/Relatório de Auditoria de Coordenadas.qmd` e use **Render** no RStudio. O QMD somente lê o RDS fixo e apresenta a auditoria dos dados. A configuração `_quarto.yml` direciona os resultados para uma pasta fixa em `03_saida/relatorios/`, preservando o caminho da pasta de origem. O HTML deste relatório será `03_saida/relatorios/04_reports/relatorio_auditoria_coordenadas.html`, sem espaços ou acentos. As renderizações seguintes reutilizam esse mesmo destino.
+
+O `.qmd` e a configuração `_quarto.yml` são fontes versionados no GitHub. O HTML, os demais resultados de `03_saida/` e os arquivos auxiliares de renderização são locais e ignorados pelo Git. O `README.md` de `03_saida/` é documentação e permanece versionado.
 
 ## Mapa das possíveis inconsistências
 

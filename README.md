@@ -8,7 +8,7 @@ Em seguida, os dados são inseridos em um modelo populacional Bernoulli-Poisson 
 
 Estas estimativas populacionais podem ser usadas na produção de índices agregados de tendências de biodiversidade, como o Living Planet Index - LPI, e outros.
 
-<img src="03_saida/abundances.png" title="Relative abundance trends" width="700">
+Os resultados são gerados localmente em `03_saida/` e não são versionados. Os arquivos `.qmd` em `04_reports/` são código-fonte dos relatórios e devem permanecer no GitHub.
 
 
 ## Estrutura do diretório
@@ -19,7 +19,8 @@ Estas estimativas populacionais podem ser usadas na produção de índices agreg
 |   ├───dados_processados
 ├───02_scripts
 |   ├───funcoes
-└───03_saida
+├───03_saida
+└───04_reports
 ```
 
 ## Nota aos colaboradores

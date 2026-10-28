@@ -4,6 +4,7 @@ subtitle: "Curadoria de dados de armadilhas fotográficas TEAM/Monitora"
 author: "Ana Carolina Ribeiro"
 date: last-modified
 lang: pt-BR
+output-file: relatorio_auditoria_coordenadas.html
 params:
   project_root: null
 format:

@@ -15,6 +15,19 @@ github-token.R
 bin/
 testes/
 01_entrada/dados_referencia/
-03_saida/auditoria_curadoria/
-04/reports/Relatório de Auditoria de Coordenadas_files/
-04/reports/Relatório de Auditoria de Coordenadas.html
+# Resultados locais; a documentação da pasta continua versionada.
+/03_saida/*
+!/03_saida/README.md
+
+# HTML gerado em qualquer pasta, inclusive extensões em maiúsculas.
+*.[hH][tT][mM][lL]
+*.[hH][tT][mM]
+
+# Arquivos auxiliares do Quarto. Os fontes .qmd NÃO são ignorados.
+.quarto/
+_freeze/
+/04_reports/*_files/
+/04_reports/*_cache/
+/04_reports/*.knit.md
+/04_reports/*.utf8.md
+/04_reports/*.rmarkdown
