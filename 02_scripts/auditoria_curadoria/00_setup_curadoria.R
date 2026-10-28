@@ -35,8 +35,7 @@ audit_required_packages <- c(
   "tidyverse",
   "lubridate",
   "fs",
-  "sf",
-  "leaflet"
+  "sf"
 )
 
 audit_missing_packages <- audit_required_packages[
@@ -69,7 +68,6 @@ suppressPackageStartupMessages({
   library(tidyverse)
   library(lubridate)
   library(sf)
-  library(leaflet)
 })
 
 
@@ -132,10 +130,7 @@ if (!dir.exists(audit_raw_dir)) {
 audit_directories <- c(
   audit_processed_dir,
   audit_output_dir,
-  audit_tables_dir,
-  audit_figures_dir,
-  audit_logs_dir,
-  audit_functions_dir
+  audit_tables_dir
 )
 
 invisible(
@@ -166,11 +161,11 @@ audit_package_versions <- tibble(
 
 #----- carregar apenas funções da auditoria
 
-audit_function_files <- fs::dir_ls(
-  audit_functions_dir,
-  glob = "*.R",
-  type = "file"
-)
+audit_function_files <- if (dir.exists(audit_functions_dir)) {
+  fs::dir_ls(audit_functions_dir, glob = "*.R", type = "file")
+} else {
+  character()
+}
 
 if (length(audit_function_files) > 0) {
   invisible(

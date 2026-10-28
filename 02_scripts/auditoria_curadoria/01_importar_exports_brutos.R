@@ -10,7 +10,8 @@
 # - nenhum image_id é removido ou deduplicado;
 # - os arquivos brutos originais permanecem intocados;
 # - cada execução cria uma rodada de auditoria independente;
-# - as correções serão feitassempre no Wildlife Insights.
+# - as correções serão feitas sempre no Wildlife Insights.
+# - a cópia RDS grande é opcional; os CSVs originais são preservados.
 #
 # Atenção:
 # O diretório 01_entrada/dados_brutos deve conter apenas um
@@ -690,6 +691,7 @@ audit_raw_exports <- list(
 
 audit_import_log <- list(
   audit_run_id = audit_run_id,
+  r_version = R.version.string,
   package_versions = audit_package_versions,
   input_manifest = audit_input_manifest,
   image_schema = image_schema_audit,
@@ -733,11 +735,10 @@ audit_import_log_file <- file.path(
   "01_import_log.rds"
 )
 
-saveRDS(
-  audit_raw_exports,
-  audit_raw_exports_file,
-  compress = "gzip"
-)
+audit_save_raw_snapshot <- isTRUE(getOption("monitora.salvar_snapshot", FALSE))
+if (audit_save_raw_snapshot) {
+  saveRDS(audit_raw_exports, audit_raw_exports_file, compress = "gzip")
+}
 
 saveRDS(
   audit_import_log,
@@ -745,125 +746,8 @@ saveRDS(
   compress = "gzip"
 )
 
-readr::write_csv(
-  audit_input_manifest,
-  file.path(
-    audit_run_tables_dir,
-    "01_input_manifest.csv"
-  )
-)
-
-readr::write_csv(
-  import_summary,
-  file.path(
-    audit_run_tables_dir,
-    "01_import_summary.csv"
-  )
-)
-
-readr::write_csv(
-  image_schema_audit,
-  file.path(
-    audit_run_tables_dir,
-    "01_image_schema_audit.csv"
-  )
-)
-
-readr::write_csv(
-  deployment_key_multiplicity,
-  file.path(
-    audit_run_tables_dir,
-    "01_deployments_with_multiple_rows.csv"
-  )
-)
-
-readr::write_csv(
-  deployment_duplicate_field_differences,
-  file.path(
-    audit_run_tables_dir,
-    "01_deployment_duplicate_field_differences.csv"
-  )
-)
-
-readr::write_csv(
-  deployments_without_project,
-  file.path(
-    audit_run_tables_dir,
-    "01_deployment_keys_without_project.csv"
-  )
-)
-
-readr::write_csv(
-  cameras_without_project,
-  file.path(
-    audit_run_tables_dir,
-    "01_camera_rows_without_project.csv"
-  )
-)
-
-readr::write_csv(
-  image_deployments_not_found,
-  file.path(
-    audit_run_tables_dir,
-    "01_image_deployment_keys_not_found.csv"
-  )
-)
-
-readr::write_csv(
-  deployments_without_images,
-  file.path(
-    audit_run_tables_dir,
-    "01_deployment_keys_without_images.csv"
-  )
-)
-
-readr::write_csv(
-  deployments_without_camera_id,
-  file.path(
-    audit_run_tables_dir,
-    "01_deployment_rows_without_camera_id.csv"
-  )
-)
-
-readr::write_csv(
-  deployment_camera_keys_not_found,
-  file.path(
-    audit_run_tables_dir,
-    "01_deployment_camera_keys_not_found.csv"
-  )
-)
-
-readr::write_csv(
-  projects_parse_problems,
-  file.path(
-    audit_run_tables_dir,
-    "01_projects_parse_problems.csv"
-  )
-)
-
-readr::write_csv(
-  cameras_parse_problems,
-  file.path(
-    audit_run_tables_dir,
-    "01_cameras_parse_problems.csv"
-  )
-)
-
-readr::write_csv(
-  deployments_parse_problems,
-  file.path(
-    audit_run_tables_dir,
-    "01_deployments_parse_problems.csv"
-  )
-)
-
-readr::write_csv(
-  images_parse_problems,
-  file.path(
-    audit_run_tables_dir,
-    "01_images_parse_problems.csv"
-  )
-)
+# Resumo legível. Detalhes, problemas e hashes ficam reunidos no log RDS.
+readr::write_csv(import_summary, file.path(audit_run_tables_dir, "01_resumo_importacao.csv"))
 
 
 #----- registrar a rodada mais recente após salvar todos os arquivos
@@ -896,10 +780,11 @@ message(
   audit_run_id
 )
 
-message(
-  "\nObjeto bruto da auditoria salvo em:\n",
-  audit_raw_exports_file
-)
+if (audit_save_raw_snapshot) {
+  message("\nCópia dos dados brutos salva em:\n", audit_raw_exports_file)
+} else {
+  message("\nCópia RDS dos dados brutos não gerada; os CSVs originais foram preservados.")
+}
 
 message(
   "\nTabelas da importação salvas em:\n",
