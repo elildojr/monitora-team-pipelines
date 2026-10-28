@@ -8,6 +8,8 @@
 *.csv
 *.xlsx
 *.pdf
+*.html
+*.json
 github-token.R
 .positai
 bin/

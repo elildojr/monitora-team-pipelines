@@ -259,19 +259,17 @@ n_cases_requiring_review <- sum(
 ```
 
 ::: {.callout-note appearance="simple"}
-
 ## Síntese executiva
 
 Esta auditoria avaliou `r format(n_audited_deployments, big.mark = ".", scientific = FALSE)` deployments únicos, sem modificar coordenadas, excluir registros ou corrigir metadados localmente.
 
 Foram identificados `r n_shared_groups` grupos de coordenadas associados a placenames distintos, envolvendo `r n_shared_deployments` deployments. Essas situações representam pendências de curadoria e não erros confirmados.
-
 :::
 
 # Identificação e finalidade
 
-**Rodada de auditoria:** `r audit_run_id`  
-**Dados auditados:** exports brutos do Wildlife Insights  
+**Rodada de auditoria:** `r audit_run_id`\
+**Dados auditados:** exports brutos do Wildlife Insights\
 **Objeto avaliado:** coordenadas dos deployments de armadilhas fotográficas TEAM/Monitora.
 
 O objetivo foi identificar inconsistências espaciais antes de qualquer correção no Wildlife Insights. Este documento apresenta resultados observados nos exports, pendências que exigem confirmação e limites da inferência baseada somente nos metadados disponíveis.
@@ -284,15 +282,15 @@ Não foram aplicados filtros ecológicos, exclusões de imagens, correções de 
 
 Foram verificados:
 
-1. presença de `placename`, latitude e longitude;
-2. formato numérico das coordenadas em graus decimais;
-3. limites geográficos mundiais válidos;
-4. possível inversão entre latitude e longitude;
-5. compatibilidade com um envelope geográfico amplo do Brasil;
-6. mais de uma coordenada atribuída ao mesmo deployment;
-7. coordenadas compartilhadas por placenames distintos;
-8. mudanças superiores a 30 m para a mesma estação entre campanhas;
-9. disponibilidade de mapas interativos para inspeção visual.
+1.  presença de `placename`, latitude e longitude;
+2.  formato numérico das coordenadas em graus decimais;
+3.  limites geográficos mundiais válidos;
+4.  possível inversão entre latitude e longitude;
+5.  compatibilidade com um envelope geográfico amplo do Brasil;
+6.  mais de uma coordenada atribuída ao mesmo deployment;
+7.  coordenadas compartilhadas por placenames distintos;
+8.  mudanças superiores a 30 m para a mesma estação entre campanhas;
+9.  disponibilidade de mapas interativos para inspeção visual.
 
 O envelope geográfico do Brasil é uma triagem ampla. Ele não substitui a futura verificação dos pontos dentro dos polígonos oficiais das Unidades de Conservação.
 
@@ -436,12 +434,12 @@ Esses limites delimitam decisões que exigem evidência externa aos exports e im
 
 # Encaminhamento de curadoria
 
-1. Conferir os casos pendentes nas fichas de instalação e na malha amostral.
-2. Verificar deployments e placenames correspondentes no Wildlife Insights.
-3. Registrar a evidência utilizada e a decisão tomada para cada pendência.
-4. Corrigir somente metadados confirmadamente inconsistentes, diretamente no Wildlife Insights.
-5. Baixar novamente os exports após as correções.
-6. Reexecutar os scripts 01 e 02 para verificar se a pendência foi resolvida.
+1.  Conferir os casos pendentes nas fichas de instalação e na malha amostral.
+2.  Verificar deployments e placenames correspondentes no Wildlife Insights.
+3.  Registrar a evidência utilizada e a decisão tomada para cada pendência.
+4.  Corrigir somente metadados confirmadamente inconsistentes, diretamente no Wildlife Insights.
+5.  Baixar novamente os exports após as correções.
+6.  Reexecutar os scripts 01 e 02 para verificar se a pendência foi resolvida.
 
 Nenhuma correção deve ser realizada apenas porque uma flag foi produzida pelo script.
 
@@ -466,7 +464,8 @@ knitr::kable(
 
 sessionInfo()
 ```
----
+
+------------------------------------------------------------------------
 
 ## Quarto
 
