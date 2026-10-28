@@ -1,26 +1,10 @@
-# ============================================================
 # 01_importar_exports_brutos.R
-#
-# Importação dos exports brutos do Wildlife Insights
-# para auditoria e curadoria.
-#
-# Princípios:
-# - nenhum registro é filtrado;
-# - nenhuma coordenada ou timestamp é convertido nesta etapa;
-# - nenhum image_id é removido ou deduplicado;
-# - os arquivos brutos originais permanecem intocados;
-# - os mesmos exports reutilizam a rodada atual;
-# - exports alterados iniciam uma nova rodada;
-# - um único RDS, em caminho fixo, reúne os resultados atuais;
-# - não são feitas correções nesta etapa.
-#
-# Atenção:
-# O diretório 01_entrada/dados_brutos deve conter apenas um
-# conjunto ativo de exports do Wildlife Insights por vez.
-# ============================================================
+# Importação dos exports do Wildlife Insights como texto, sem excluir registros.
+# A entrada deve conter um conjunto ativo de exports.
+# Resumos e verificações de importação são salvos em auditoria_curadoria.rds.
 
 
-#----- setup exclusivo da auditoria
+#----- configuração da auditoria
 
 source(
   "02_scripts/auditoria_curadoria/00_setup_curadoria.R",
@@ -362,12 +346,7 @@ if (nrow(schema_errors) > 0) {
 }
 
 
-#----- importar todas as linhas dos arquivos images_*.csv
-#
-# timestamp permanece como texto.
-# Não há conversão de fuso horário.
-# Nenhum blank, registro de Computer Vision ou táxon incompleto
-# é excluído nesta etapa.
+#----- importar images_*.csv com campos de texto e todas as linhas
 
 images_import <- readr::read_csv(
   file = as.character(images_files),
@@ -652,11 +631,7 @@ audit_raw_exports <- list(
     timestamp_handling = "imported as character; no timezone conversion",
     coordinate_handling = "imported as character; no coordinate conversion",
     image_columns_imported = image_audit_columns,
-    note = paste(
-      "The original CSV files remain the complete source.",
-      "The R object preserves all records and the fields required",
-      "for spatial, temporal and taxonomic auditing."
-    )
+    note = "Campos selecionados para auditoria; conjunto completo disponível nos CSVs de origem."
   ),
   projects = projects_raw,
   cameras = cameras_raw,
@@ -698,7 +673,7 @@ audit_import_log <- list(
 )
 
 
-#----- atualizar o único arquivo de resultados desta rodada
+#----- salvar a importação no RDS da auditoria
 
 audit_result$importacao <- audit_import_log
 audit_result <- audit_save_result(audit_result)
@@ -706,9 +681,7 @@ audit_result <- audit_save_result(audit_result)
 
 #----- apresentar resumo no console
 
-message(
-  "\nImportação bruta concluída sem aplicação de filtros."
-)
+message("\nImportação dos exports concluída.")
 
 print(
   import_summary,
@@ -720,5 +693,5 @@ message(
   audit_run_id
 )
 
-if (audit_reused_run) message("Os exports são os mesmos; a rodada existente foi reutilizada.")
-message("\nArquivo único de resultados:\n", audit_result_file)
+if (audit_reused_run) message("Conteúdo dos exports inalterado; identificador da importação mantido.")
+message("\nResultados: ", audit_result_file)

@@ -1,6 +1,6 @@
-# Investigacoes derivadas: proximidade entre unidades e historico anual.
-# Unidade amostral: project_id + placename_key (camera trap/estacao).
-# Nao altera coordenadas, nomes, datas ou registros de origem.
+# Distâncias entre placenames e referências anuais dos registros.
+# Agrupamento: project_id + placename_key.
+# As tabelas de períodos e presença são auxiliares e não integram o relatório espacial.
 
 audit_collapse_values <- function(x) {
   x <- as.character(x)
@@ -14,7 +14,7 @@ audit_geo_distance_m <- function(longitude, latitude) {
   haversine <- sin(outer(lat, lat, "-") / 2)^2 +
     outer(cos(lat), cos(lat), "*") * sin(outer(lon, lon, "-") / 2)^2
   haversine <- pmax(0, pmin(1, haversine))
-  # pmin/pmax podem remover dimensoes em algumas versoes do R.
+  # Repor a dimensão da matriz após limitar os valores a [0, 1].
   dim(haversine) <- c(length(lon), length(lon))
   2 * 6371008.8 * atan2(sqrt(haversine), sqrt(1 - haversine))
 }
@@ -44,14 +44,14 @@ audit_station_spatiotemporal <- function(deployments, nearby_threshold_m) {
     "camera_id_raw_values", "camera_name_raw_values"
   )
   if (!is.data.frame(deployments) || !all(required %in% names(deployments))) {
-    stop("A tabela espacial nao contem os campos necessarios para investigar unidades.", call. = FALSE)
+    stop("Campos obrigatórios ausentes na tabela de coordenadas.", call. = FALSE)
   }
   if (length(nearby_threshold_m) != 1L || !is.finite(nearby_threshold_m) || nearby_threshold_m <= 0) {
-    stop("O limiar de proximidade deve ser um numero positivo em metros.", call. = FALSE)
+    stop("O limiar de proximidade deve ser um número positivo em metros.", call. = FALSE)
   }
   d <- as.data.frame(deployments, stringsAsFactors = FALSE)
   if (anyDuplicated(paste(d$project_id, d$deployment_id, sep = "\u001f"))) {
-    stop("A investigacao exige uma linha por chave projeto/deployment.", call. = FALSE)
+    stop("A tabela de coordenadas deve conter uma linha por project_id/deployment_id.", call. = FALSE)
   }
   d$project_id <- as.character(d$project_id)
   d$placename_key <- as.character(d$placename_key)
@@ -86,8 +86,8 @@ audit_station_spatiotemporal <- function(deployments, nearby_threshold_m) {
     stringsAsFactors = FALSE
   )
 
-  # Anos de operacao para proximidade. Intervalos que cruzam dezembro
-  # participam dos dois anos. Fim desconhecido participa apenas do ano de inicio.
+  # Referência anual da comparação espacial: anos abrangidos pelo período informado.
+  # Sem término interpretável, utiliza-se apenas o ano de início.
   operation_parts <- lapply(which(unit_valid & !is.na(start_year)), function(i) {
     years <- if (period_valid[i]) {
       seq.int(start_year[i], as.integer(format(end_day[i], "%Y")))
@@ -102,8 +102,7 @@ audit_station_spatiotemporal <- function(deployments, nearby_threshold_m) {
     data.frame(row_index = integer(), project_id = character(), placename_key = character(), operation_year = integer())
   }
 
-  # Historico de presenca: ano de INICIO do deployment como referencia de campanha.
-  # A referencia de comparacao e cada ano com dados do proprio projeto.
+  # Tabelas auxiliares de presença por ano de início; comparação nos anos com dados do projeto.
   history_rows <- list()
   presence_rows <- list()
   coverage_rows <- list()
@@ -125,7 +124,7 @@ audit_station_spatiotemporal <- function(deployments, nearby_threshold_m) {
     }
     for (unit in sort(unique(d$placename_key[project_indices][unit_valid[project_indices]]))) {
       unit_indices <- project_indices[d$placename_key[project_indices] == unit & unit_valid[project_indices]]
-      # which evita indices NA quando outra linha nao possui placename.
+      # Descartar índices indeterminados por placename ausente.
       unit_indices <- unit_indices[!is.na(unit_indices)]
       years <- sort(unique(start_year[unit_indices][!is.na(start_year[unit_indices])]))
       first_year <- if (length(years)) min(years) else NA_integer_
@@ -155,13 +154,13 @@ audit_station_spatiotemporal <- function(deployments, nearby_threshold_m) {
         first_observed_after_project_start = length(years) > 0 && first_year > first_project_year,
         investigation_codes = paste(codes, collapse = " | "),
         interpretation = if (length(later_years)) {
-          "Nao observada nos exports de anos posteriores com dados do projeto; descontinuacao nao confirmada."
+          "Sem registro nos anos posteriores disponíveis do projeto."
         } else if (length(gap_years)) {
-          "Ha ausencia em ano com dados do projeto e reaparecimento posterior; causa nao confirmada."
+          "Ausência em ano intermediário com dados do projeto e registro posterior."
         } else if (!length(years)) {
-          "Nao foi possivel avaliar o historico anual por falta de ano de inicio valido."
+          "Referência anual indisponível: ano de início não interpretável."
         } else {
-          "Observada no ultimo ano disponivel do projeto; continuidade futura nao avaliada."
+          "Registrada no último ano disponível do projeto."
         },
         stringsAsFactors = FALSE
       )
@@ -188,7 +187,7 @@ audit_station_spatiotemporal <- function(deployments, nearby_threshold_m) {
   presence <- if (length(presence_rows)) do.call(rbind, presence_rows) else data.frame()
   coverage <- if (length(coverage_rows)) do.call(rbind, coverage_rows) else data.frame()
 
-  # Candidatos proximos em qualquer ano: nomes distintos, mesmo projeto.
+  # Pares de placenames distintos abaixo do limiar, em qualquer ano do mesmo projeto.
   valid_geometry <- unit_valid & !is.na(d$valid_coordinate_for_geometry) & d$valid_coordinate_for_geometry &
     is.finite(d$longitude_num) & is.finite(d$latitude_num)
   locations <- unique(d[valid_geometry, c("project_id", "placename_key", "longitude_num", "latitude_num")])
@@ -219,7 +218,7 @@ audit_station_spatiotemporal <- function(deployments, nearby_threshold_m) {
   candidates <- candidates[order(candidates$minimum_distance_m), , drop = FALSE]
   candidates <- candidates[!duplicated(candidates$pair_id), , drop = FALSE]
 
-  # Evidencia por deployment e ano de operacao; intervalos ao nivel de dias.
+  # Pares de deployments próximos por ano informado e relação entre os períodos.
   detail_parts <- list()
   operation_groups <- split(operation_rows, paste(operation_rows$project_id, operation_rows$operation_year))
   for (group in operation_groups) {
@@ -326,14 +325,14 @@ audit_station_spatiotemporal <- function(deployments, nearby_threshold_m) {
   list(
     metadata = list(
       created_at_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
-      sampling_unit = "project_id + placename_key; cada placename e uma unidade amostral (camera trap)",
+      sampling_unit = "project_id + placename_key",
       nearby_threshold_m = nearby_threshold_m,
       nearby_rule = "distancia estritamente menor que o limiar; nomes distintos no mesmo projeto; inclui distancia zero",
-      distance_method = "haversine, esfera com raio 6371008.8 m; distancia aproximada de triagem",
+      distance_method = "haversine; raio da esfera: 6371008.8 m",
       proximity_year_basis = "todos os anos civis entre inicio e fim validos; com fim desconhecido, somente ano de inicio e periodo indeterminado",
       overlap_basis = "intervalos de datas inclusivos, sem inferir simultaneidade intradiaria; contato apenas na data-limite e separado",
       continuity_year_basis = "ano de inicio do deployment como referencia de campanha; somente anos com dados do proprio projeto",
-      absence_interpretation = "nao observado nos exports; nao confirma descontinuacao, falha, erro ou ausencia de campanha",
+      absence_interpretation = "ausência de registro nos exports; motivo não determinado",
       local_correction = "not applied", local_exclusion = "not applied", r_version = R.version.string
     ),
     summary = data.frame(metric = names(summary_values), value = as.integer(summary_values), row.names = NULL),

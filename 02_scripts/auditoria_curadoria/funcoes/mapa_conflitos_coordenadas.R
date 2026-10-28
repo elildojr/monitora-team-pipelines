@@ -1,5 +1,5 @@
-# Mapa interativo dos resultados já calculados da auditoria.
-# Retorna um objeto leaflet para o Viewer ou o QMD; não grava arquivos.
+# Representação das coordenadas e dos pares de proximidade salvos no RDS.
+# Retorno: objeto leaflet para o relatório ou o Viewer.
 mapa_conflitos_coordenadas <- function(
     audit_result,
     project_id = NULL,
@@ -27,10 +27,22 @@ mapa_conflitos_coordenadas <- function(
   }
   threshold <- as.numeric(audit_result$metadata$nearby_threshold_m)
   threshold_label <- format(threshold, scientific = FALSE, trim = TRUE)
-  group_review <- "Coordenadas/metadados para revisão"
-  group_nearby <- paste0("Unidades próximas no mesmo ano (<", threshold_label, " m)")
-  group_history <- "Proximidade histórica entre unidades"
-  group_clear <- "Sem sinalização espacial"
+  station_threshold <- audit_result$coordenadas$metadata$station_shift_review_threshold_m
+  flag_labels <- c(
+    MISSING_PLACENAME = "Ausência de placename para vincular a localização",
+    MISSING_COORDINATE = "Ausência de latitude ou longitude",
+    INVALID_DECIMAL_FORMAT = "Coordenada sem formato decimal interpretável",
+    MULTIPLE_COORDINATE_VALUES = "Valores brutos de coordenada divergentes no mesmo deployment",
+    OUTSIDE_WORLD_RANGE = "Coordenada fora dos intervalos de latitude ou longitude",
+    POSSIBLE_LATITUDE_LONGITUDE_SWAP = "Possível inversão entre latitude e longitude",
+    OUTSIDE_BRAZIL_ENVELOPE = "Coordenada fora do retângulo de referência para o Brasil",
+    SHARED_COORDINATES_DIFFERENT_PLACENAMES = "Coordenada compartilhada por placenames distintos",
+    STATION_SHIFT_OVER_30_M = paste0("Distância superior a ", station_threshold, " m entre posições do mesmo placename")
+  )
+  group_review <- "Coordenadas sinalizadas"
+  group_nearby <- paste0("Proximidade no mesmo ano (<", threshold_label, " m)")
+  group_history <- "Proximidade sem coincidência anual"
+  group_clear <- "Demais posições"
   group_lines <- "Pares próximos no mesmo ano"
   colours <- setNames(c("#D73027", "#E69F00", "#377EB8", "#238B45"),
                       c(group_review, group_nearby, group_history, group_clear))
@@ -45,7 +57,6 @@ mapa_conflitos_coordenadas <- function(
   unit_results <- audit_result$unidades_amostrais
   pairs <- if (!is.null(unit_results)) as.data.frame(unit_results$nearby_unit_pairs) else data.frame()
   details <- if (!is.null(unit_results)) as.data.frame(unit_results$nearby_deployment_year_pairs) else data.frame()
-  history <- if (!is.null(unit_results)) as.data.frame(unit_results$station_temporal_history) else data.frame()
   row_keys <- deployment_key(d$project_id, d$deployment_id)
   same_year_keys <- if (nrow(details)) {
     unique(c(deployment_key(details$project_id, details$deployment_a),
@@ -59,8 +70,7 @@ mapa_conflitos_coordenadas <- function(
   d$map_position_key <- position_key(d$project_id, d$longitude_num, d$latitude_num)
   d$map_nearby_same_year <- row_keys %in% same_year_keys
   d$map_historical_nearby <- d$map_position_key %in% historical_positions
-  d$map_coordinate_review <- d$coordinate_status == "REVIEW" |
-    (!is.na(d$camera_metadata_conflict) & d$camera_metadata_conflict)
+  d$map_coordinate_review <- d$coordinate_status == "REVIEW"
 
   positions <- lapply(split(seq_len(nrow(d)), d$map_position_key), function(indices) {
     rows <- d[indices, , drop = FALSE]
@@ -69,15 +79,16 @@ mapa_conflitos_coordenadas <- function(
     group <- if (any(rows$map_coordinate_review, na.rm = TRUE)) group_review else if (any(rows$map_nearby_same_year, na.rm = TRUE)) {
       group_nearby
     } else if (any(rows$map_historical_nearby, na.rm = TRUE)) group_history else group_clear
-    reasons <- if ("coordinate_flag_descriptions" %in% names(rows)) {
-      collapse(rows$coordinate_flag_descriptions)
-    } else collapse(rows$coordinate_flag_codes)
-    if (any(rows$camera_metadata_conflict, na.rm = TRUE)) reasons <- paste(reasons, "Conflito de metadados de câmera.")
-    if (!nzchar(trimws(reasons))) reasons <- "Sem sinalização de integridade espacial nos critérios avaliados."
+    codes <- unique(unlist(strsplit(rows$coordinate_flag_codes, " | ", fixed = TRUE)))
+    codes <- codes[!is.na(codes) & nzchar(codes)]
+    descriptions <- unname(flag_labels[codes])
+    descriptions[is.na(descriptions)] <- codes[is.na(descriptions)]
+    reasons <- collapse(descriptions)
+    if (!nzchar(trimws(reasons))) reasons <- "Nenhuma ocorrência nos critérios de coordenadas."
     popup <- paste0(
       "<strong>Projeto:</strong> ", e(rows$project_short_name[1]),
       "<br><strong>Unidades amostrais:</strong> ", e(collapse(rows$placename_raw)),
-      "<br><strong>Coordenadas:</strong> ", rows$longitude_num[1], ", ", rows$latitude_num[1],
+      "<br><strong>Longitude / latitude:</strong> ", rows$longitude_num[1], " / ", rows$latitude_num[1],
       "<br><strong>Anos de início dos deployments:</strong> ", e(collapse(rows$deployment_year)),
       "<br><strong>Deployments:</strong> ", e(collapse(rows$deployment_id)),
       "<br><strong>Sinalizações:</strong> ", e(trimws(reasons))
@@ -88,26 +99,14 @@ mapa_conflitos_coordenadas <- function(
       if (nrow(nearby)) {
         items <- vapply(seq_len(nrow(nearby)), function(i) {
           years <- nearby$nearby_same_years[i]
-          overlaps <- nearby$overlapping_years[i]
           paste0(e(nearby$unit_a[i]), " / ", e(nearby$unit_b[i]), ": ",
-            formatC(nearby$minimum_distance_m[i], digits = 1, format = "f", decimal.mark = ","), " m",
-            "; proximidade no mesmo ano: ", if (nzchar(years)) e(years) else "não registrada",
-            "; datas sobrepostas: ", if (nzchar(overlaps)) e(overlaps) else "não registradas")
+            "distância mínima geral de ",
+            formatC(nearby$minimum_distance_m[i], digits = 2, format = "f", decimal.mark = ","), " m",
+            "; anos com proximidade: ", if (!is.na(years) && nzchar(years)) e(years) else "sem coincidência anual documentada")
         }, character(1))
-        popup <- paste0(popup, "<br><br><strong>Proximidade registrada no histórico:</strong><br>",
+        popup <- paste0(popup, "<br><br><strong>Pares de proximidade:</strong><br>",
+                        "Distâncias mínimas no conjunto de posições de cada par.<br>",
                         paste(items, collapse = "<br>"))
-      }
-    }
-    if (nrow(history)) {
-      temporal <- history[as.character(history$project_id) == project & history$placename_key %in% units, , drop = FALSE]
-      if (nrow(temporal)) {
-        items <- vapply(seq_len(nrow(temporal)), function(i) {
-          paste0(e(temporal$placename_key[i]), ": anos ", e(temporal$observed_start_years[i]),
-            "; lacunas com retorno: ", if (nzchar(temporal$gap_years_with_later_return[i])) e(temporal$gap_years_with_later_return[i]) else "nenhuma registrada",
-            "; anos posteriores sem registro: ", if (nzchar(temporal$project_years_after_last_record[i])) e(temporal$project_years_after_last_record[i]) else "nenhum registrado")
-        }, character(1))
-        popup <- paste0(popup, "<br><br><strong>Histórico anual:</strong><br>", paste(items, collapse = "<br>"),
-                        "<br>Ausência nos exports não confirma descontinuação.")
       }
     }
     data.frame(longitude = rows$longitude_num[1], latitude = rows$latitude_num[1],
@@ -142,7 +141,7 @@ mapa_conflitos_coordenadas <- function(
     }
   }
 
-  # As linhas usam os deployments efetivamente comparados no mesmo ano.
+  # Segmentos entre as posições dos deployments comparados no mesmo ano.
   if (nrow(details)) {
     a <- match(deployment_key(details$project_id, details$deployment_a), row_keys)
     b <- match(deployment_key(details$project_id, details$deployment_b), row_keys)
@@ -152,9 +151,10 @@ mapa_conflitos_coordenadas <- function(
       i <- indices[1]
       popup <- paste0(
         "<strong>Unidades:</strong> ", e(details$unit_a[i]), " / ", e(details$unit_b[i]),
-        "<br><strong>Distância:</strong> ", formatC(min(details$distance_m[indices]), digits = 1, format = "f", decimal.mark = ","), " m",
-        "<br><strong>Anos de operação próximos:</strong> ", e(collapse(details$operation_year[indices])),
-        "<br><strong>Anos com datas sobrepostas:</strong> ", e(collapse(details$operation_year[indices][details$period_relation[indices] == "DATAS_SOBREPOSTAS"]))
+        "<br><strong>Distância:</strong> ", formatC(min(details$distance_m[indices]), digits = 2, format = "f", decimal.mark = ","), " m",
+        "<br><strong>Anos com proximidade:</strong> ", e(collapse(details$operation_year[indices])),
+        "<br><strong>Deployments A:</strong> ", e(collapse(details$deployment_a[indices])),
+        "<br><strong>Deployments B:</strong> ", e(collapse(details$deployment_b[indices]))
       )
       map <- leaflet::addPolylines(map,
         lng = c(d$longitude_num[a[i]], d$longitude_num[b[i]]),
@@ -168,7 +168,7 @@ mapa_conflitos_coordenadas <- function(
       overlayGroups = c("Limites das UCs", names(colours), group_lines),
       options = leaflet::layersControlOptions(collapsed = FALSE)) |>
     leaflet::addLegend(position = "bottomright", colors = unname(colours), labels = names(colours),
-                       title = "Sinalizações para investigação", opacity = 1) |>
+                       title = "Ocorrências espaciais", opacity = 1) |>
     leaflet::addScaleBar(position = "bottomleft") |>
     leaflet::fitBounds(min(d$longitude_num), min(d$latitude_num), max(d$longitude_num), max(d$latitude_num))
 }

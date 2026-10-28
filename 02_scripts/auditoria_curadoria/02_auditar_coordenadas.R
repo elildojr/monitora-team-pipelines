@@ -1,25 +1,11 @@
-# ============================================================
 # 02_auditar_coordenadas.R
-#
-# Auditoria espacial dos deployments do Wildlife Insights.
-#
-# Princípios:
-# - não altera coordenadas originais;
-# - não exclui deployments;
-# - preserva longitude e latitude como texto bruto;
-# - cria uma tabela derivada, com uma linha por deployment;
-# - identifica possíveis inconsistências, sem executar correções;
-# - investiga proximidade inferior a 500 m e histórico anual das unidades;
-# - atualiza somente auditoria_curadoria.rds, em caminho fixo.
-#
-# Limite desta etapa:
-# Este script não testa se cada ponto está dentro da respectiva
-# Unidade de Conservação. Ele verifica integridade, formato, domínio, duplicações
-# espaciais e estabilidade das estações entre anos.
-# ============================================================
+# Verificação de formato, domínio e consistência espacial por deployment.
+# Compara coordenadas do mesmo placename e de placenames distintos.
+# Os valores de origem são preservados; as ocorrências são salvas no RDS.
+# O pertencimento aos polígonos das UCs não é testado nesta etapa.
 
 
-#----- setup exclusivo da auditoria
+#----- configuração da auditoria
 
 source(
   "02_scripts/auditoria_curadoria/00_setup_curadoria.R",
@@ -27,7 +13,7 @@ source(
 )
 
 
-#----- parâmetros explícitos da auditoria espacial
+#----- parâmetros espaciais
 
 coordinate_rounding_digits <- 6
 
@@ -39,7 +25,7 @@ brazil_latitude_min <- -35
 brazil_latitude_max <- 6
 
 
-#----- ler os resultados atuais no arquivo único
+#----- importação de referência
 
 audit_result <- audit_read_result()
 audit_import_log <- audit_result$importacao
@@ -49,7 +35,7 @@ if (is.null(audit_import_log$input_manifest)) {
 audit_run_id <- audit_result$metadata$audit_run_id
 
 
-#----- confirmar que os CSVs atuais são idênticos ao snapshot
+#----- comparar os CSVs atuais com o manifesto da importação
 
 spatial_input_files <- c(
   file.path(audit_raw_dir, "projects.csv"),
@@ -106,7 +92,7 @@ if (nrow(hash_mismatches) > 0) {
   hash_details <- paste(
     paste0(
       hash_mismatches$source_file,
-      " [hash do snapshot: ",
+      " [hash da importação: ",
       hash_mismatches$expected_md5,
       "; hash atual: ",
       hash_mismatches$current_md5,
@@ -117,14 +103,11 @@ if (nrow(hash_mismatches) > 0) {
   
   stop(
     paste0(
-      "Os arquivos CSV atuais não correspondem ao snapshot ",
-      "importado na rodada ",
+      "Os arquivos CSV atuais diferem dos arquivos da importação ",
       audit_run_id,
       ".\n\n",
       hash_details,
-      "\n\nNão prossiga com a auditoria espacial. ",
-      "Execute novamente 01_importar_exports_brutos.R ",
-      "para criar uma nova rodada documentada."
+      "\n\nExecute novamente 01_importar_exports_brutos.R antes da auditoria espacial."
     ),
     call. = FALSE
   )
@@ -310,11 +293,7 @@ max_pairwise_distance_m <- function(
 }
 
 
-#----- importar apenas projects e deployments do snapshot validado
-#
-# Não carregamos o RDS completo com milhões de imagens, pois esta
-# auditoria utiliza apenas os metadados espaciais. A identidade com
-# o snapshot foi confirmada acima pelos hashes MD5.
+#----- ler projects.csv e deployments.csv após a comparação dos hashes
 
 projects_file <- file.path(
   audit_raw_dir,
@@ -409,9 +388,7 @@ project_context <- project_context |>
 
 #----- criar tabela espacial derivada por deployment
 #
-# Os dados brutos em deployments_raw não são alterados. Esta tabela
-# apenas consolida as linhas repetidas do mesmo deployment e registra
-# explicitamente eventuais conflitos entre os metadados.
+# Uma linha por project_id/deployment_id, com os valores brutos distintos.
 
 deployment_coordinate_audit <- deployments_raw |>
   mutate(
@@ -659,7 +636,7 @@ shared_coordinate_flags <- shared_coordinates_different_placenames |>
   )
 
 
-#----- avaliar estabilidade espacial de cada estação entre anos
+#----- comparar as posições atribuídas ao mesmo placename
 
 station_coordinate_history <- deployment_coordinate_audit |>
   filter(
@@ -803,15 +780,15 @@ coordinate_flag_dictionary <- tibble(
     "STATION_SHIFT_OVER_30_M"
   ),
   flag_description = c(
-    "Deployment sem placename.",
+    "Ausência de placename para vincular a localização.",
     "Longitude e/ou latitude ausente.",
-    "Longitude e/ou latitude não está em graus decimais.",
-    "Mesmo deployment possui mais de um valor bruto de coordenada.",
+    "Coordenada sem formato decimal interpretável.",
+    "Valores brutos de coordenada divergentes no mesmo deployment.",
     "Longitude e/ou latitude fora do domínio geográfico global.",
-    "Valores podem corresponder a latitude e longitude invertidas.",
-    "Projeto marcado como BRA, mas coordenada está fora do envelope territorial brasileiro.",
-    "Coordenada compartilhada por dois ou mais placenames no mesmo projeto.",
-    "Mesmo placename apresentou deslocamento máximo superior a 30 m entre deployments."
+    "Possível inversão entre latitude e longitude.",
+    "Coordenada fora do retângulo de referência para o Brasil em projeto BRA.",
+    "Coordenada compartilhada por placenames distintos no mesmo projeto.",
+    paste0("Distância superior a ", station_shift_review_m, " m entre posições do mesmo placename.")
   )
 )
 
@@ -994,10 +971,7 @@ coordinate_audit_output <- list(
     local_record_exclusion = "not applied",
     coordinate_input_handling =
       "longitude and latitude retained as raw character fields",
-    brazil_envelope_note = paste(
-      "Brazil envelope is a coarse screening rule only.",
-      "It does not replace validation against official UC polygons."
-    ),
+    brazil_envelope_note = "Retângulo de referência para projetos BRA; não corresponde aos limites do país ou das UCs.",
     station_shift_review_threshold_m =
       station_shift_review_m
   ),
@@ -1020,9 +994,8 @@ coordinate_audit_output <- list(
     station_coordinate_changes_over_threshold
 )
 
-#----- proximidade e histórico das unidades amostrais
-# Os critérios de proximidade usam o valor central de 500 m definido no setup.
-# Cada placename de comparação identifica uma unidade amostral no projeto.
+#----- proximidade entre placenames e referências anuais auxiliares
+# Limiar de proximidade definido em audit_nearby_threshold_m, na etapa 00.
 
 unit_audit_output <- audit_station_spatiotemporal(
   deployment_coordinate_audit,
@@ -1038,13 +1011,14 @@ audit_result <- audit_save_result(audit_result)
 
 #----- apresentar resultados no console
 
-message("Auditoria dos dados concluída sem correções ou exclusões.")
+message("Auditoria de coordenadas concluída.")
 print(coordinate_summary, n = Inf)
 if (nrow(coordinate_flag_summary) > 0) {
   message("Sinalizações espaciais:")
   print(coordinate_flag_summary, n = Inf)
 }
-message("Proximidade entre unidades amostrais: menos de ", audit_nearby_threshold_m, " m.")
-print(unit_audit_output$summary, row.names = FALSE)
-message("Arquivo único de resultados: ", audit_result_file)
+message("Proximidade entre placenames distintos: distância inferior a ", audit_nearby_threshold_m, " m.")
+spatial_summary_metrics <- c("n_nearby_unit_pairs_any_year", "n_nearby_unit_pairs_same_year")
+print(unit_audit_output$summary[unit_audit_output$summary$metric %in% spatial_summary_metrics, ], row.names = FALSE)
+message("Resultados: ", audit_result_file)
 message("O pertencimento aos polígonos das UCs não foi avaliado nesta etapa.")

@@ -1,16 +1,8 @@
-# ============================================================
 # 00_setup_curadoria.R
-# Setup exclusivo do fluxo de auditoria e curadoria.
-#
-# Este script:
-# - não lê nem modifica dados;
-# - não chama scripts ou funções analíticas do supervisor;
-# - não aplica filtros de independência, taxonomia ou blanks;
-# - apenas configura o ambiente para a auditoria.
-# ============================================================
+# Pacotes, caminhos, critérios e funções de leitura e gravação da auditoria.
 
 
-#----- verificar se o projeto foi aberto corretamente
+#----- diretório do projeto
 
 if (!file.exists("monitora-team-pipelines.Rproj")) {
   stop(
@@ -29,7 +21,7 @@ audit_project_root <- normalizePath(
 )
 
 
-#----- verificar pacotes necessários para a auditoria
+#----- dependências
 
 audit_required_packages <- c(
   "tidyverse",
@@ -71,7 +63,7 @@ suppressPackageStartupMessages({
 })
 
 
-#----- definir caminhos exclusivos da auditoria
+#----- caminhos da auditoria
 
 audit_raw_dir <- file.path(
   audit_project_root,
@@ -94,7 +86,7 @@ audit_functions_dir <- file.path(
 )
 
 
-#----- verificar entrada e criar apenas diretórios da auditoria
+#----- diretórios de entrada e resultados
 
 if (!dir.exists(audit_raw_dir)) {
   stop(
@@ -136,7 +128,7 @@ audit_package_versions <- tibble(
 )
 
 
-#----- formato único dos resultados e critérios comuns
+#----- estrutura dos resultados e limiar de proximidade
 
 audit_result_filename <- "auditoria_curadoria.rds"
 audit_result_file <- file.path(audit_processed_dir, audit_result_filename)
@@ -148,7 +140,7 @@ audit_new_result <- function(run_id) {
       audit_run_id = run_id,
       created_at_utc = format(Sys.time(), tz = "UTC", usetz = TRUE),
       nearby_threshold_m = audit_nearby_threshold_m,
-      sampling_unit = "project_id + placename_key; cada placename identifica uma unidade amostral",
+      sampling_unit = "project_id + placename_key",
       local_correction = "not applied",
       local_exclusion = "not applied"
     ),
@@ -162,7 +154,7 @@ audit_read_result <- function(required = TRUE) {
   if (file.exists(audit_result_file)) {
     return(readRDS(audit_result_file))
   }
-  # Leitura de importações antigas; novas gravações usam somente o caminho fixo.
+  # Compatibilidade com a importação anterior ao RDS de caminho fixo.
   legacy_pointer <- file.path(audit_processed_dir, "AUDIT_CURRENT_RUN.txt")
   if (file.exists(legacy_pointer)) {
     legacy_run_id <- trimws(readLines(legacy_pointer, n = 1, warn = FALSE))
@@ -203,7 +195,7 @@ audit_same_inputs <- function(previous_manifest, current_manifest) {
 }
 
 
-#----- carregar apenas funções da auditoria
+#----- funções da auditoria
 
 audit_function_files <- if (dir.exists(audit_functions_dir)) {
   fs::dir_ls(audit_functions_dir, glob = "*.R", type = "file")
@@ -222,10 +214,4 @@ if (length(audit_function_files) > 0) {
 }
 
 
-#----- mensagem final
-
-message(
-  "Setup da auditoria concluído.\n",
-  "Nenhum dado foi lido, filtrado ou modificado."
-  
-)
+message("Ambiente da auditoria configurado.")

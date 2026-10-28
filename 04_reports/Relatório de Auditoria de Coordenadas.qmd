@@ -1,6 +1,6 @@
 ---
-title: "Relatório de Auditoria de Coordenadas"
-subtitle: "Curadoria de dados de armadilhas fotográficas TEAM/Monitora"
+title: "Auditoria de coordenadas geográficas"
+subtitle: "Registros TEAM/Monitora no Wildlife Insights"
 author: "Ana Carolina Ribeiro"
 date: last-modified
 lang: pt-BR
@@ -11,7 +11,7 @@ format:
   html:
     theme: cosmo
     toc: true
-    toc-depth: 3
+    toc-depth: 2
     toc-location: left
     number-sections: true
     html-table-processing: none
@@ -19,16 +19,23 @@ format:
     include-in-header:
       text: |
         <style>
-        .audit-table { font-size: 0.88rem; }
-        .audit-table td, .audit-table th { vertical-align: top; overflow-wrap: anywhere; }
-        .audit-table caption { caption-side: top; color: inherit; }
-        .presence-table td { text-align: center; white-space: nowrap; }
-        .presence-table td:first-child { text-align: left; }
-        .presence-P, .presence-R { background: #d8f1df; color: #164b28; }
-        .presence-L { background: #fff0c2; color: #6a4a00; }
-        .presence-A { background: #ffe0dc; color: #7c2420; }
-        .presence-SD, .presence-before { background: #edf0f2; color: #555; }
+        :root { --bs-body-color: #242424; --bs-link-color: #27526d; }
+        main { font-family: Georgia, "Times New Roman", serif; line-height: 1.65; }
+        h1, h2, h3, #TOC, .quarto-title-meta { font-family: Arial, sans-serif; }
+        h1, h2, h3 { color: #20394a; }
+        .table-responsive { margin: 1.1rem 0 1.6rem; }
+        .audit-table { width: 100%; border-collapse: collapse; font: 0.85rem/1.45 Arial, sans-serif; }
+        .audit-table caption { caption-side: top; text-align: left; color: #242424; padding-bottom: .55rem; }
+        .audit-table thead { border-top: 1.5px solid #444; border-bottom: 1px solid #777; }
+        .audit-table tbody { border-bottom: 1.5px solid #444; }
+        .audit-table th, .audit-table td { padding: .5rem .6rem; vertical-align: top; text-align: left; }
+        .audit-table td { border-bottom: 1px solid #e0e0e0; overflow-wrap: anywhere; }
+        .audit-table .numeric { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .record-id { font-family: Consolas, monospace; font-size: .9em; }
+        .figure-caption { font-size: .9rem; color: #444; margin: .7rem 0 1.5rem; }
         details { margin: 1rem 0; }
+        summary { font-family: Arial, sans-serif; color: #20394a; cursor: pointer; }
+        @media print { details > * { display: block !important; } .table-responsive { overflow: visible; } }
         </style>
 execute:
   echo: false
@@ -41,18 +48,15 @@ execute:
 #| label: setup
 #| include: false
 
-# Garante que o R do Windows interprete os nomes e textos em portugues
-# mesmo quando o processo de renderizacao herda uma configuracao C/ASCII.
+# Codificação dos textos na renderização pelo R no Windows.
 if (.Platform$OS.type == "windows" && !isTRUE(l10n_info()[["UTF-8"]])) {
   invisible(suppressWarnings(Sys.setlocale("LC_CTYPE", ".UTF-8")))
   if (!isTRUE(l10n_info()[["UTF-8"]])) {
-    stop("Não foi possível ativar UTF-8 no R para renderizar o relatório.", call. = FALSE)
+    stop("Não foi possível ativar UTF-8 para renderizar o relatório.", call. = FALSE)
   }
 }
 
-# Leitura dos resultados da auditoria dos dados.
 if (!exists("params", inherits = FALSE)) params <- list(project_root = NULL)
-
 find_project_root <- function(start_directory = getwd()) {
   current_directory <- normalizePath(start_directory, winslash = "/", mustWork = TRUE)
   repeat {
@@ -69,488 +73,260 @@ project_root <- if (is.null(root_parameter) || !nzchar(root_parameter)) {
   find_project_root()
 } else find_project_root(root_parameter)
 
+# Resultados espaciais salvos pela etapa 02.
 audit_result_file <- file.path(project_root, "01_entrada", "dados_processados",
                                "auditoria_curadoria", "auditoria_curadoria.rds")
 if (!file.exists(audit_result_file)) {
-  stop("Resultado da auditoria ainda não encontrado: ", audit_result_file,
-       "\nNo RStudio, execute 02_auditar_coordenadas.R após a importação.", call. = FALSE)
+  stop("Resultado da auditoria não encontrado: ", audit_result_file,
+       "\nExecute 02_auditar_coordenadas.R após a importação.", call. = FALSE)
 }
 audit_result <- readRDS(audit_result_file)
 coordinate_audit <- audit_result$coordenadas
 if (is.null(coordinate_audit)) {
-  stop("A importação está disponível, mas a auditoria de coordenadas ainda não foi concluída.", call. = FALSE)
+  stop("A auditoria de coordenadas ainda não está disponível no RDS.", call. = FALSE)
 }
-import_log <- audit_result$importacao
-audit_run_id <- audit_result$metadata$audit_run_id
-nearby_threshold_m <- as.numeric(audit_result$metadata$nearby_threshold_m)
-
-audit_data_frame <- function(name) as.data.frame(coordinate_audit[[name]], stringsAsFactors = FALSE)
-coordinate_summary <- audit_data_frame("coordinate_summary")
-deployments <- audit_data_frame("deployment_coordinate_audit")
-flag_summary <- audit_data_frame("coordinate_flag_summary")
-coordinate_flags <- audit_data_frame("coordinate_flags")
-shared_coordinates <- audit_data_frame("shared_coordinates_different_placenames")
-station_history <- audit_data_frame("station_coordinate_history")
-
-metric_number <- function(name) {
-  as.numeric(coordinate_summary$value[match(name, coordinate_summary$metric)])
-}
-key_of <- function(data) paste(data$project_id, data$deployment_id, sep = "\u001f")
-
-n_audited <- metric_number("n_coordinate_audit_records")
-n_review <- sum(deployments$coordinate_status == "REVIEW")
-n_ok <- sum(deployments$coordinate_status == "OK")
-n_shared_groups <- nrow(shared_coordinates)
-n_shared_projects <- length(unique(shared_coordinates$project_id))
-n_shared_deployments <- sum(shared_coordinates$n_deployments)
+deployments <- as.data.frame(coordinate_audit$deployment_coordinate_audit)
+coordinate_summary <- as.data.frame(coordinate_audit$coordinate_summary)
+shared_coordinates <- as.data.frame(coordinate_audit$shared_coordinates_different_placenames)
+station_history <- as.data.frame(coordinate_audit$station_coordinate_history)
 station_threshold_m <- as.numeric(coordinate_audit$metadata$station_shift_review_threshold_m)
-n_shift_stations <- sum(station_history$n_unique_coordinate_keys > 1 &
-                          station_history$max_station_coordinate_distance_m > station_threshold_m)
+station_changes <- station_history[
+  station_history$n_unique_coordinate_keys > 1 &
+    station_history$max_station_coordinate_distance_m > station_threshold_m, , drop = FALSE
+]
 
-duplicate_fields <- import_log$structural_checks$deployment_duplicate_field_differences
-duplicate_fields <- as.data.frame(duplicate_fields)
-duplicate_rows <- deployments[deployments$duplicate_deployment_metadata, , drop = FALSE]
-divergent_keys <- unique(key_of(duplicate_fields))
-n_duplicate_identical <- sum(!key_of(duplicate_rows) %in% divergent_keys)
-n_duplicate_divergent <- sum(key_of(duplicate_rows) %in% divergent_keys)
+unit_results <- audit_result$unidades_amostrais
+has_proximity <- !is.null(unit_results)
+nearby_pairs <- if (has_proximity) as.data.frame(unit_results$nearby_unit_pairs) else data.frame()
+nearby_details <- if (has_proximity) as.data.frame(unit_results$nearby_deployment_year_pairs) else data.frame()
+nearby_threshold_m <- as.numeric(if (has_proximity) {
+  unit_results$metadata$nearby_threshold_m
+} else audit_result$metadata$nearby_threshold_m)
+if (nrow(nearby_pairs)) {
+  nearby_pairs <- nearby_pairs[order(nearby_pairs$project_id, nearby_pairs$unit_a, nearby_pairs$unit_b), , drop = FALSE]
+  nearby_pairs$pair_reference <- sprintf("P%03d", seq_len(nrow(nearby_pairs)))
+}
 
-project_names <- deployments[!duplicated(deployments$project_id), c("project_id", "project_short_name")]
-project_name <- function(ids) project_names$project_short_name[match(ids, project_names$project_id)]
+metric_number <- function(name) as.numeric(coordinate_summary$value[match(name, coordinate_summary$metric)])
 number <- function(x) format(x, big.mark = ".", decimal.mark = ",", scientific = FALSE, trim = TRUE)
-coordinate <- function(x) ifelse(is.na(x), "", formatC(x, format = "f", digits = 6, decimal.mark = "."))
+distance <- function(x) ifelse(is.na(x), "—", formatC(x, format = "f", digits = 2, decimal.mark = ","))
+coordinate <- function(x) ifelse(is.na(x), "—", formatC(x, format = "f", digits = 6, decimal.mark = "."))
+collapse_values <- function(x) {
+  x <- as.character(x)
+  paste(sort(unique(x[!is.na(x) & nzchar(trimws(x))])), collapse = " | ")
+}
+project_names <- deployments[!duplicated(deployments$project_id), c("project_id", "project_short_name")]
+project_name <- function(ids) {
+  names <- as.character(project_names$project_short_name[match(ids, project_names$project_id)])
+  missing <- is.na(names) | !nzchar(names)
+  names[missing] <- as.character(ids[missing])
+  names
+}
+project_label <- function(ids) paste0(project_name(ids), " (", ids, ")")
+deployment_key <- function(project, deployment) paste(project, deployment, sep = "\u001f")
+pair_reference <- function(ids) nearby_pairs$pair_reference[match(ids, nearby_pairs$pair_id)]
 html_escape <- function(x) {
   x <- as.character(x)
-  x[is.na(x)] <- ""
+  x[is.na(x)] <- "—"
   x <- gsub("&", "&amp;", x, fixed = TRUE)
   x <- gsub("<", "&lt;", x, fixed = TRUE)
   x <- gsub(">", "&gt;", x, fixed = TRUE)
   gsub('"', "&quot;", x, fixed = TRUE)
 }
-report_table <- function(data, caption) {
-  cat('<div class="table-responsive"><table class="table table-striped table-sm audit-table">\n')
-  cat("<caption>", html_escape(caption), "</caption><thead><tr>", sep = "")
-  cat(paste0('<th scope="col">', html_escape(names(data)), "</th>"), sep = "")
+table_counter <- 0L
+report_table <- function(data, caption, list_columns = character(), code_columns = character()) {
+  table_counter <<- table_counter + 1L
+  numeric_columns <- vapply(data, is.numeric, logical(1))
+  cat('<div class="table-responsive"><table class="audit-table">\n')
+  cat("<caption><strong>Tabela ", table_counter, ".</strong> ", html_escape(caption), "</caption><thead><tr>", sep = "")
+  for (j in seq_along(data)) {
+    cat('<th scope="col"', if (numeric_columns[j]) ' class="numeric"' else "", ">",
+        html_escape(names(data)[j]), "</th>", sep = "")
+  }
   cat("</tr></thead><tbody>\n")
   for (i in seq_len(nrow(data))) {
-    values <- vapply(data, function(column) html_escape(column[i]), character(1))
-    cat("<tr>", paste0("<td>", values, "</td>", collapse = ""), "</tr>\n", sep = "")
-  }
-  cat("</tbody></table></div>\n")
-}
-
-metric_labels <- c(
-  n_deployment_rows_raw = "Linhas brutas de deployments",
-  n_coordinate_audit_records = "Deployments auditados",
-  n_duplicate_deployment_metadata = "Deployments com linhas repetidas nos metadados",
-  n_camera_metadata_conflicts = "Deployments com conflito de câmera",
-  n_missing_placename = "Deployments sem placename preenchido",
-  n_missing_coordinate = "Deployments com coordenada ausente",
-  n_invalid_decimal_format = "Deployments com formato decimal inválido",
-  n_multiple_coordinate_values = "Deployments com valores de coordenada conflitantes",
-  n_outside_world_range = "Deployments fora do domínio geográfico mundial",
-  n_possible_latitude_longitude_swap = "Deployments com possível inversão latitude–longitude",
-  n_outside_brazil_envelope = "Deployments fora do envelope amplo do Brasil",
-  n_shared_coordinates_different_placenames = "Deployments em coordenadas compartilhadas por placenames distintos",
-  n_station_shift_over_30_m = "Deployments vinculados a estação com deslocamento acima do limiar",
-  n_station_coordinate_histories = "Unidades amostrais com coordenadas avaliáveis"
-)
-summary_metrics <- c(
-  "n_deployment_rows_raw", "n_coordinate_audit_records", "n_station_coordinate_histories",
-  "n_duplicate_deployment_metadata", "n_camera_metadata_conflicts", "n_missing_placename",
-  "n_missing_coordinate", "n_invalid_decimal_format", "n_multiple_coordinate_values",
-  "n_outside_world_range", "n_possible_latitude_longitude_swap", "n_outside_brazil_envelope",
-  "n_shared_coordinates_different_placenames", "n_station_shift_over_30_m"
-)
-summary_labels <- unname(metric_labels[summary_metrics])
-summary_labels[is.na(summary_labels)] <- summary_metrics[is.na(summary_labels)]
-summary_display <- data.frame(
-  Indicador = summary_labels,
-  Valor = vapply(summary_metrics, function(name) number(metric_number(name)), character(1)),
-  check.names = FALSE
-)
-
-no_signal_metrics <- c("n_missing_placename", "n_missing_coordinate", "n_invalid_decimal_format",
-                       "n_multiple_coordinate_values", "n_outside_world_range",
-                       "n_possible_latitude_longitude_swap", "n_outside_brazil_envelope",
-                       "n_station_shift_over_30_m")
-n_criteria_without_flags <- sum(vapply(no_signal_metrics, metric_number, numeric(1)) == 0)
-
-placeholder_rows <- deployments[
-  !is.na(deployments$placename_raw) &
-    grepl("^(null([_-][0-9]+)?|n/?a|none|nan)$", tolower(trimws(deployments$placename_raw))),
-  , drop = FALSE
-]
-station_investigation <- audit_result$unidades_amostrais
-has_station_investigation <- !is.null(station_investigation)
-if (has_station_investigation) {
-  nearby_pairs <- as.data.frame(station_investigation$nearby_unit_pairs)
-  nearby_details <- as.data.frame(station_investigation$nearby_deployment_year_pairs)
-  temporal_history <- as.data.frame(station_investigation$station_temporal_history)
-  annual_presence <- as.data.frame(station_investigation$station_year_presence)
-  annual_coverage <- as.data.frame(station_investigation$project_year_coverage)
-  period_audit <- as.data.frame(station_investigation$deployment_period_audit)
-  nearby_threshold_m <- station_investigation$metadata$nearby_threshold_m
-  n_nearby_same_year <- sum(nearby_pairs$n_nearby_same_years > 0)
-  n_nearby_overlap <- sum(nearby_pairs$n_pairs_overlapping_dates > 0)
-  n_history_gaps <- sum(temporal_history$n_gap_years > 0)
-  n_history_later_absence <- sum(temporal_history$n_later_project_years_without_record > 0)
-  station_summary_labels <- c(
-    n_sampling_units = "Unidades amostrais (placenames de comparação por projeto)",
-    n_nearby_unit_pairs_any_year = "Pares de unidades próximas em qualquer ano",
-    n_nearby_unit_pairs_same_year = "Pares próximos com registro no mesmo ano de operação",
-    n_nearby_unit_pairs_overlapping_dates = "Pares próximos com sobreposição de datas",
-    n_nearby_deployment_year_pairs = "Combinações de deployments próximos por ano de operação",
-    n_units_with_gap_and_return = "Unidades com lacuna e reaparecimento",
-    n_units_not_observed_later = "Unidades não observadas em anos posteriores disponíveis",
-    n_units_observed_latest_project_year = "Unidades observadas no último ano disponível do projeto",
-    n_deployments_with_period_issue = "Deployments com período que exige revisão",
-    n_project_calendar_years_without_records = "Anos de calendário sem registros no respectivo projeto"
-  )
-  station_summary <- as.data.frame(station_investigation$summary)
-  station_summary_display <- data.frame(
-    Indicador = unname(station_summary_labels[station_summary$metric]),
-    Valor = number(station_summary$value), check.names = FALSE
-  )
-  extended_summary_text <- paste0(
-    "A investigação complementar identificou ", number(n_nearby_same_year),
-    " pares de unidades a menos de ", number(nearby_threshold_m),
-    " m no mesmo ano de operação, dos quais ", number(n_nearby_overlap),
-    " apresentam sobreposição de datas. Foram observadas ", number(n_history_gaps),
-    " unidades com lacuna e reaparecimento e ", number(n_history_later_absence),
-    " unidades sem registro nos anos posteriores disponíveis do próprio projeto. Ausência nos exports não confirma descontinuação."
-  )
-} else {
-  extended_summary_text <- "Os resultados de proximidade e histórico anual não estão disponíveis para esta rodada."
-}
-
-report_presence_matrix <- function(project) {
-  histories <- temporal_history[temporal_history$project_id == project, , drop = FALSE]
-  histories <- histories[order(histories$placename_key), , drop = FALSE]
-  coverage <- annual_coverage[annual_coverage$project_id == project, , drop = FALSE]
-  coverage <- coverage[order(coverage$year), , drop = FALSE]
-  presence <- annual_presence[annual_presence$project_id == project, , drop = FALSE]
-  status_symbol <- c(PRESENTE = "P", PRESENTE_APOS_LACUNA = "R",
-    LACUNA_ENTRE_REGISTROS = "L", NAO_OBSERVADA_APOS_ULTIMO_REGISTRO = "A",
-    ANTES_DA_PRIMEIRA_OBSERVACAO = "—", SEM_ANO_VALIDO = "?")
-  cat('<div class="table-responsive"><table class="table table-sm audit-table presence-table"><thead><tr><th>Unidade amostral</th>')
-  cat(paste0("<th>", coverage$year, "</th>"), sep = "")
-  cat("</tr></thead><tbody>\n")
-  for (unit in histories$placename_key) {
-    cat("<tr><td>", html_escape(unit), "</td>", sep = "")
-    for (i in seq_len(nrow(coverage))) {
-      if (!coverage$project_has_records[i]) {
-        symbol <- "SD"; css <- "SD"
-      } else {
-        status <- presence$presence_status[presence$placename_key == unit & presence$start_year == coverage$year[i]]
-        symbol <- if (length(status) == 1L) unname(status_symbol[status]) else "?"
-        css <- if (symbol == "—") "before" else symbol
-      }
-      cat('<td class="presence-', css, '">', symbol, "</td>", sep = "")
+    cat("<tr>")
+    for (j in seq_along(data)) {
+      value <- data[[j]][i]
+      value <- html_escape(if (numeric_columns[j]) number(value) else value)
+      if (names(data)[j] %in% list_columns) value <- gsub(" | ", "<br>", value, fixed = TRUE)
+      if (names(data)[j] %in% code_columns) value <- paste0('<span class="record-id">', value, "</span>")
+      cat("<td", if (numeric_columns[j]) ' class="numeric"' else "", ">", value, "</td>", sep = "")
     }
     cat("</tr>\n")
   }
   cat("</tbody></table></div>\n")
 }
+
+flag_labels <- c(
+  MISSING_PLACENAME = "Ausência de placename para vincular a localização",
+  MISSING_COORDINATE = "Ausência de latitude ou longitude",
+  INVALID_DECIMAL_FORMAT = "Coordenada sem formato decimal interpretável",
+  MULTIPLE_COORDINATE_VALUES = "Valores brutos de coordenada divergentes no mesmo deployment",
+  OUTSIDE_WORLD_RANGE = "Coordenada fora dos intervalos de latitude ou longitude",
+  POSSIBLE_LATITUDE_LONGITUDE_SWAP = "Possível inversão entre latitude e longitude",
+  OUTSIDE_BRAZIL_ENVELOPE = "Coordenada fora do retângulo de referência para o Brasil",
+  SHARED_COORDINATES_DIFFERENT_PLACENAMES = "Coordenada compartilhada por placenames distintos",
+  STATION_SHIFT_OVER_30_M = paste0("Distância superior a ", number(station_threshold_m), " m entre posições do mesmo placename")
+)
+describe_flags <- function(codes) {
+  vapply(strsplit(as.character(codes), " | ", fixed = TRUE), function(values) {
+    labels <- unname(flag_labels[values])
+    labels[is.na(labels)] <- values[is.na(labels)]
+    paste(labels, collapse = " | ")
+  }, character(1))
+}
+summary_metrics <- c(
+  "n_missing_placename", "n_missing_coordinate", "n_invalid_decimal_format",
+  "n_multiple_coordinate_values", "n_outside_world_range", "n_possible_latitude_longitude_swap",
+  "n_outside_brazil_envelope", "n_shared_coordinates_different_placenames", "n_station_shift_over_30_m"
+)
+summary_display <- data.frame(
+  Critério = unname(flag_labels),
+  `Deployments sinalizados` = vapply(summary_metrics, metric_number, numeric(1)),
+  check.names = FALSE
+)
+review_rows <- deployments[deployments$coordinate_status == "REVIEW", , drop = FALSE]
+n_audited <- nrow(deployments)
+n_review <- nrow(review_rows)
+n_projects <- length(unique(deployments$project_id))
+n_shared_groups <- nrow(shared_coordinates)
+n_shift_stations <- nrow(station_changes)
+n_without_geometry <- sum(!deployments$valid_coordinate_for_geometry, na.rm = TRUE)
+n_nearby_same_year <- if (nrow(nearby_pairs)) sum(nearby_pairs$n_nearby_same_years > 0) else 0L
+n_nearby_without_year <- nrow(nearby_pairs) - n_nearby_same_year
 ```
 
-::: {.callout-note appearance="simple"}
-## Síntese da auditoria
+# Objetivo e base examinada
 
-A rodada **`r audit_run_id`** avaliou **`r number(n_audited)` deployments únicos**, dos quais **`r number(n_review)` foram sinalizados para revisão espacial**, totalizando **`r number(nrow(coordinate_flags))` sinalizações**.
+Identificar e localizar possíveis inconsistências nas coordenadas geográficas dos registros TEAM/Monitora no Wildlife Insights, reunindo os elementos necessários à conferência dos cadastros na plataforma. Foram examinados **`r number(n_audited)` deployments**, distribuídos em **`r number(n_projects)` projetos**. A análise utiliza os valores dos exports e não altera os registros de origem.
 
-Foram encontrados **`r number(n_shared_groups)` grupos de coordenadas compartilhadas por placenames distintos**, em **`r number(n_shared_projects)` projetos**, envolvendo **`r number(n_shared_deployments)` deployments**. São possíveis inconsistências que exigem avaliação; não constituem erros confirmados.
+O relatório abrange preenchimento e formato das coordenadas, domínio geográfico, divergências entre valores atribuídos ao mesmo deployment, compartilhamento de posições, variação espacial de um mesmo placename e proximidade entre placenames distintos. Os anos registrados são usados apenas para contextualizar as comparações espaciais. A consistência das datas das campanhas será examinada em auditoria própria.
+
+# Procedimentos
+
+A comparação foi realizada por combinação de `project_id` e `deployment_id`. Quando havia mais de uma linha para a mesma combinação, foram preservados os valores brutos distintos de latitude e longitude para identificar divergências no cadastro.
+
+As coordenadas foram interpretadas em graus decimais, admitindo ponto ou vírgula como separador decimal. Foram verificados valores ausentes, formato não interpretável e limites de longitude [−180°, 180°] e latitude [−90°, 90°]. Para os projetos com código de país `BRA`, utilizou-se também um retângulo de referência com longitude [−75°, −32°] e latitude [−35°, 6°]. A possível inversão entre latitude e longitude foi indicada quando a posição original estava fora desse retângulo e a posição com os eixos permutados estava dentro dele.
+
+Dentro de cada projeto, foram examinadas três relações espaciais:
+
+1. **Compartilhamento de coordenadas:** posições iguais após arredondamento a seis casas decimais, atribuídas a placenames distintos.
+2. **Variação de posição do mesmo placename:** distância máxima entre as coordenadas atribuídas ao nome, com seleção dos casos acima de **`r number(station_threshold_m)` m**.
+3. **Proximidade entre placenames distintos:** distância estritamente inferior a **`r number(nearby_threshold_m)` m**, incluindo distância zero. Foram comparadas todas as posições disponíveis e, separadamente, as posições com registro no mesmo ano de operação. As distâncias entre unidades foram calculadas pela fórmula de haversine, com raio terrestre de 6.371.008,8 m.
+
+Para relacionar os nomes, foram uniformizados caixa, espaços e separadores `_` e `-`, mantendo os nomes originais nas relações de registros. A coincidência anual decorre dos períodos informados nos exports, incluindo os anos atravessados pelo intervalo de operação; quando o término não é interpretável, utiliza-se apenas o ano de início disponível. Essa referência anual não constitui validação das datas nem demonstra simultaneidade de operação.
+
+# Resultados
+
+## Ocorrências identificadas
+
+Foram sinalizados **`r number(n_review)` deployments** pelos critérios de preenchimento, formato ou consistência espacial. Foram identificados **`r number(n_shared_groups)` grupos de coordenadas compartilhadas por placenames distintos** e **`r number(n_shift_stations)` placenames com variação de posição superior a `r number(station_threshold_m)` m**.
 
 ```{r}
-#| label: sintese-investigacao
+#| label: sintese-proximidade
 #| results: asis
-cat("<p>", html_escape(extended_summary_text), "</p>\n", sep = "")
+if (has_proximity) {
+  cat("<p>A comparação entre placenames distintos identificou <strong>", number(nrow(nearby_pairs)),
+      " pares</strong> com distância inferior a ", number(nearby_threshold_m), " m em pelo menos uma combinação de posições. Em <strong>",
+      number(n_nearby_same_year), " pares</strong>, a proximidade também foi registrada no mesmo ano de operação; em ",
+      number(n_nearby_without_year), " pares, essa coincidência anual não foi documentada.</p>\n", sep = "")
+} else {
+  cat("<p>A comparação de proximidade entre placenames distintos não está disponível nos resultados examinados.</p>\n")
+}
+report_table(summary_display, "Ocorrências por critério de verificação das coordenadas.")
 ```
 
-**Os resultados identificam possíveis inconsistências; não confirmam erros nem determinam correções.**
-:::
+Um deployment pode atender a mais de um critério. A última linha da tabela conta os deployments vinculados aos placenames com variação de posição acima do limiar, enquanto o texto informa o número de placenames. Os pares de proximidade são apresentados separadamente e podem incluir coordenadas já sinalizadas por compartilhamento de posição.
 
-# Identificação e escopo
-
-**Rodada:** `r audit_run_id`  
-**Fonte dos dados:** exports do Wildlife Insights registrados na importação da rodada.  
-**Execução da auditoria em UTC:** `r coordinate_audit$metadata$created_at_utc`.
-
-O objetivo é identificar possíveis inconsistências nas coordenadas e nos metadados associados aos deployments de armadilhas fotográficas TEAM/Monitora, considerando localização, proximidade entre unidades e histórico anual de registros.
-
-# Critérios da auditoria dos dados
-
-A análise considera cada **`placename` de comparação como uma unidade amostral (camera trap), dentro de seu projeto**. Os deployments representam os períodos de instalação e operação associados a essas unidades.
-
-1. **Unidade de análise:** uma linha derivada por combinação de `project_id` e `deployment_id`, preservando a contagem de linhas de origem e os valores distintos relevantes.
-2. **Preenchimento e formato:** presença de `placename`, latitude e longitude e possibilidade de interpretar as coordenadas como graus decimais.
-3. **Domínio geográfico:** longitude entre −180 e 180 e latitude entre −90 e 90.
-4. **Triagem para projetos BRA:** envelope amplo de longitude entre −75 e −32 e latitude entre −35 e 6. A hipótese de inversão é sinalizada quando o par original está fora desse envelope e o par invertido fica dentro dele.
-5. **Conflitos por deployment:** identificação de mais de um valor bruto de latitude ou longitude para a mesma chave.
-6. **Compartilhamento espacial:** coordenadas agrupadas por projeto e arredondadas a seis casas decimais, associadas a mais de um `placename` de comparação.
-7. **Histórico da estação:** distância máxima entre coordenadas do mesmo projeto e `placename` de comparação; sinalização acima de **`r number(station_threshold_m)` m**.
-8. **Contexto dos metadados:** contagem de linhas repetidas de deployments e conflitos de câmera. Esses indicadores são separados das flags que determinam o status espacial.
-9. **Unidades próximas:** pares de placenames distintos no mesmo projeto, com distância geográfica estritamente inferior ao limiar de atenção de **`r number(nearby_threshold_m)` m**. A distância é aproximada, calculada por haversine sobre esfera de raio 6.371.008,8 m; o limiar sinaliza atenção e não estabelece, por si só, espaçamento obrigatório do protocolo.
-10. **Coincidência temporal da proximidade:** anos civis cobertos pelos períodos de operação, inclusive períodos que atravessam dezembro. O mesmo ano é distinguido da sobreposição de datas. Contato apenas na data de encerramento/início é apresentado separadamente. A análise usa dias inclusivos, sem presumir simultaneidade intradiária ou converter fusos horários.
-11. **Continuidade das unidades:** ano de início do deployment como referência de campanha. Para cada unidade, compara presença, lacuna entre registros, reaparecimento e ausência posterior, usando somente os anos em que o próprio projeto possui registros. Anos inteiros sem dados do projeto são apresentados separadamente.
-
-Na comparação dos nomes, foram normalizados caixa, espaços nas extremidades e separadores `_`/`-`. Nas coordenadas, foram utilizadas representações numéricas derivadas, admitindo vírgula decimal. Os arquivos de origem foram preservados.
-
-O histórico é agrupado pelo nome de comparação existente. Nomes diferentes para uma mesma estação podem formar históricos separados. Ausência de deslocamento sinalizado não demonstra, por si só, estabilidade física da instalação em campo.
-
-## Interpretação das sinalizações
-
-- **Com sinalização:** foi identificado pelo menos um indício de possível inconsistência espacial.
-- **Sem sinalização:** não foram identificados indícios nos critérios de integridade espacial avaliados. Isso não confirma a posição em campo, o pertencimento à UC ou a consistência de todos os metadados de câmera.
-- **Coordenada representável em mapa:** formato e domínio permitem criar a geometria, sem conflito de coordenadas no deployment. Uma instalação representável pode apresentar sinalizações para investigação.
-
-As sinalizações de proximidade e continuidade são apresentadas separadamente das flags de integridade espacial. Assim, a ausência de indícios de integridade espacial pode coexistir com unidades próximas ou lacunas no histórico anual.
-
-## Relação com os limites das UCs
-
-**O pertencimento dos pontos aos polígonos das UCs não está incluído nas verificações aqui apresentadas.** A compatibilidade com o envelope amplo do Brasil não confirma a localização dentro do território brasileiro ou da UC correspondente.
-
-# Resultados da rodada
-
-## Resumo quantitativo
+## Coordenadas compartilhadas
 
 ```{r}
-#| label: tabela-resumo
+#| label: coordenadas-compartilhadas
 #| results: asis
-report_table(summary_display, "Resumo quantitativo da auditoria de coordenadas.")
-```
-
-Há **`r number(n_ok)` deployments sem sinalizações de integridade espacial** e **`r number(n_review)` com sinalizações**. Entre os oito critérios de preenchimento, formato, domínio, conflito de coordenadas e deslocamento listados no resumo, **`r number(n_criteria_without_flags)` não apresentaram sinalizações**.
-
-O indicador de deslocamento no resumo conta **deployments vinculados a históricos sinalizados**, e não o número de estações. Nesta rodada, **`r number(n_shift_stations)` históricos de estação** ultrapassaram o limiar registrado.
-
-## Possíveis inconsistências espaciais
-
-```{r}
-#| label: tabela-flags
-#| results: asis
-if (nrow(flag_summary) == 0) {
-  cat("<p>Não foram identificadas sinalizações de integridade espacial nos critérios avaliados.</p>\n")
+if (!nrow(shared_coordinates)) {
+  cat("<p>Não foram identificadas coordenadas compartilhadas por placenames distintos no mesmo projeto.</p>\n")
 } else {
   report_table(data.frame(
-    "Descrição" = flag_summary$flag_description,
-    Deployments = number(flag_summary$n_deployments),
-    check.names = FALSE
-  ), "Sinalizações de integridade espacial identificadas.")
-}
-```
-
-O compartilhamento de coordenadas indica que unidades amostrais com nomes distintos possuem a mesma localização de comparação no projeto. Essa situação não determina qual nome ou coordenada estaria incorreto. Uma instalação pode apresentar mais de um indício; por isso, a quantidade de sinalizações pode superar a quantidade de instalações envolvidas.
-
-
-## Coordenadas compartilhadas por nomes distintos
-
-Os **`r number(n_shared_groups)` grupos** abaixo correspondem aos resultados desta rodada. Todos permanecem como sinalizações para revisão, sem indicar uma correção a executar.
-
-```{r}
-#| label: tabela-coordenadas-compartilhadas
-#| results: asis
-if (nrow(shared_coordinates) == 0) {
-  cat("<p>Não foram registrados grupos de coordenadas compartilhadas.</p>\n")
-} else {
-  shared_display <- data.frame(
-    Projeto = paste0(project_name(shared_coordinates$project_id), " (", shared_coordinates$project_id, ")"),
+    Projeto = project_label(shared_coordinates$project_id),
+    Placenames = shared_coordinates$placenames,
     Longitude = coordinate(shared_coordinates$longitude_num),
     Latitude = coordinate(shared_coordinates$latitude_num),
-    Deployments = number(shared_coordinates$n_deployments),
-    Placenames = shared_coordinates$placenames,
+    Deployments = shared_coordinates$n_deployments,
     check.names = FALSE
-  )
-  report_table(shared_display, "Grupos de coordenadas compartilhadas; hipóteses de erro ainda não confirmadas.")
-  report_table(data.frame(
-    Projeto = project_name(shared_coordinates$project_id),
-    Placenames = shared_coordinates$placenames,
-    `Deployments envolvidos` = shared_coordinates$deployment_ids,
-    `Situação na auditoria` = rep("Sinalização para revisão; sem correção", nrow(shared_coordinates)),
-    check.names = FALSE
-  ), "Rastreabilidade dos deployments envolvidos em cada grupo.")
+  ), "Posições associadas a mais de um placename no mesmo projeto. Coordenadas em graus decimais.",
+  list_columns = "Placenames")
 }
 ```
 
-Os exports, isoladamente, não permitem distinguir uma estação renomeada, uma coordenada reutilizada indevidamente ou câmeras intencionalmente instaladas na mesma posição. Variações de grafia também são hipóteses a investigar quando os dados as sustentarem.
+Nesses casos, a conferência deve estabelecer se os nomes correspondem a locais distintos na malha amostral e se a coordenada foi atribuída ao cadastro correto. Os identificadores dos deployments e os valores originais estão relacionados no apêndice.
 
-## Deployments repetidos e conflitos de câmera
-
-Foram encontrados **`r number(nrow(duplicate_rows))` deployments com mais de uma linha de metadados**, dos quais **`r number(n_duplicate_identical)` não apresentaram diferenças nos campos importados** e **`r number(n_duplicate_divergent)` apresentaram diferenças**, totalizando **`r number(nrow(duplicate_fields))` combinações de deployment e campo divergente**.
+## Variação das coordenadas de um mesmo placename
 
 ```{r}
-#| label: tabela-metadados-repetidos
+#| label: variacao-posicao
 #| results: asis
-if (nrow(duplicate_rows) == 0) {
-  cat("<p>Não foram registradas chaves de deployment repetidas.</p>\n")
-} else {
-  duplicate_display <- data.frame(
-    Projeto = duplicate_rows$project_short_name,
-    Deployment = duplicate_rows$deployment_id,
-    `Linhas na origem` = duplicate_rows$n_deployment_rows,
-    `IDs de câmera encontrados` = duplicate_rows$camera_id_raw_values,
-    `Nomes de câmera encontrados` = duplicate_rows$camera_name_raw_values,
-    `Conflito de câmera` = ifelse(duplicate_rows$camera_metadata_conflict, "Sim", "Não"),
-    `Situação espacial` = ifelse(duplicate_rows$coordinate_status == "REVIEW", "Com sinalização", "Sem sinalização"),
-    check.names = FALSE
-  )
-  report_table(duplicate_display, "Repetições de metadados e eventuais conflitos de câmera.")
-}
-```
-
-**Conflitos de câmera são apresentados separadamente do status espacial.** Linhas repetidas nos metadados não demonstram, por si só, repetição de imagens.
-
-## Observação sobre nomes possivelmente usados como marcadores
-
-```{r}
-#| label: tabela-marcadores
-#| results: asis
-if (nrow(placeholder_rows) == 0) {
-  cat("<p>Não foram observados nomes compatíveis com os marcadores textuais considerados.</p>\n")
+if (!nrow(station_changes)) {
+  cat("<p>Não foram identificados placenames com distância máxima entre posições superior a ",
+      number(station_threshold_m), " m.</p>\n", sep = "")
 } else {
   report_table(data.frame(
-    Projeto = placeholder_rows$project_short_name,
-    Deployment = placeholder_rows$deployment_id,
-    Placename = placeholder_rows$placename_raw,
-    `Observação` = rep("Texto possivelmente usado como marcador; significado não confirmado", nrow(placeholder_rows)),
+    Projeto = project_label(station_changes$project_id),
+    Placename = station_changes$placename_key,
+    `Posições distintas` = station_changes$n_unique_coordinate_keys,
+    `Distância máxima (m)` = distance(station_changes$max_station_coordinate_distance_m),
+    Deployments = station_changes$n_deployments,
     check.names = FALSE
-  ), "Nomes que podem corresponder a marcadores de preenchimento.")
+  ), "Placenames com variação de posição acima do limiar de investigação.")
+  cat("<p>A distância expressa a diferença entre coordenadas cadastradas. A distinção entre alteração de cadastro e mudança de local depende das fichas de instalação e da malha amostral.</p>\n")
 }
 ```
 
-Foram considerados nomes completos como `null`, `null_2`, `NA`, `N/A`, `none` e `nan`, sem diferenciar maiúsculas e minúsculas. Um texto como `null_2` corresponde a um campo preenchido e, por isso, pode coexistir com contagem zero de nomes ausentes. Seu significado exige confirmação.
+## Proximidade entre placenames distintos
 
-# Proximidade entre unidades e coincidência temporal
-
-```{r}
-#| label: investigacao-proximidade
-#| results: asis
-if (!has_station_investigation) {
-  cat("<p>Os resultados de proximidade entre unidades não estão disponíveis para esta rodada.</p>\n")
-} else {
-  report_table(station_summary_display, "Síntese das investigações complementares de unidades amostrais.")
-  cat("<p>O resultado inclui pares de unidades distintas com distância inferior a <strong>",
-      number(nearby_threshold_m), " m</strong>, inclusive distância zero. As contagens de pares de unidades, combinações de deployments por ano e unidades com lacunas possuem denominadores diferentes e não devem ser somadas.</p>\n", sep = "")
-  if (!nrow(nearby_pairs)) {
-    cat("<p>Nenhum par atende ao limiar de proximidade nesta rodada.</p>\n")
-  } else {
-    proximity_labels <- c(
-      PROXIMAS_COM_SOBREPOSICAO_DE_DATAS = "Mesmo ano e datas sobrepostas",
-      PROXIMAS_COM_DATA_LIMITE_COMUM = "Mesmo ano; contato apenas na data-limite",
-      PROXIMAS_NO_MESMO_ANO_PERIODO_INDETERMINADO = "Mesmo ano; período indeterminado",
-      PROXIMAS_NO_MESMO_ANO_SEM_SOBREPOSICAO = "Mesmo ano; sem sobreposição de datas",
-      PROXIMIDADE_SEM_ANO_PARA_COMPARAR = "Proximidade sem ano válido para comparação",
-      PROXIMIDADE_OBSERVADA_ENTRE_ANOS_DISTINTOS = "Proximidade observada entre anos distintos"
-    )
-    for (project in sort(unique(nearby_pairs$project_id))) {
-      subset <- nearby_pairs[nearby_pairs$project_id == project, , drop = FALSE]
-      cat("<details", if (project == "2002576") " open" else "", ">",
-          "<summary><strong>", html_escape(subset$project_short_name[1]), "</strong> — ",
-          nrow(subset), " pares próximos</summary>\n", sep = "")
-      report_table(data.frame(
-        `Unidade A` = subset$unit_a, `Unidade B` = subset$unit_b,
-        `Distância mínima (m)` = formatC(subset$minimum_distance_m, digits = 1, format = "f", decimal.mark = ","),
-        `Anos com proximidade no mesmo ano` = subset$nearby_same_years,
-        `Anos com datas sobrepostas` = subset$overlapping_years,
-        `Situação para investigação` = unname(proximity_labels[subset$investigation_status]),
-        check.names = FALSE
-      ), "Pares de unidades próximas e evidência temporal; distância mínima entre posições registradas.")
-      cat("</details>\n")
-    }
-  }
-  cat('<details><summary>Evidência por deployment e ano de operação</summary>\n')
-  if (nrow(nearby_details)) {
-    report_table(data.frame(
-      Projeto = nearby_details$project_short_name, Ano = nearby_details$operation_year,
-      `Unidade A` = nearby_details$unit_a, `Unidade B` = nearby_details$unit_b,
-      `Deployment A` = nearby_details$deployment_a, `Deployment B` = nearby_details$deployment_b,
-      `Câmeras A` = nearby_details$camera_ids_a, `Câmeras B` = nearby_details$camera_ids_b,
-      `Início A` = nearby_details$start_a, `Fim A` = nearby_details$end_a,
-      `Início B` = nearby_details$start_b, `Fim B` = nearby_details$end_b,
-      `Distância (m)` = formatC(nearby_details$distance_m, digits = 1, format = "f", decimal.mark = ","),
-      `Relação entre períodos` = nearby_details$period_relation,
-      `Dias de calendário em comum` = nearby_details$overlapping_calendar_days,
-      `IDs de câmera compartilhados` = nearby_details$shared_camera_ids,
-      check.names = FALSE
-    ), "Evidência dos pares próximos no mesmo ano. Dias inclusivos; não comprovam simultaneidade intradiária.")
-  } else cat("<p>Não há pares próximos com registro no mesmo ano de operação.</p>\n")
-  cat("</details>\n")
-}
-```
-
-Unidades próximas no mesmo ano, sobretudo com datas sobrepostas, constituem **sinalizações para investigação**. Os dados não estabelecem automaticamente erro de coordenada, repetição de unidade ou inadequação do desenho amostral. Pares próximos somente em anos distintos também são apresentados, pois podem apoiar a investigação de mudanças de nome ou posição, sem presumir que representam a mesma unidade.
-
-# Histórico anual das unidades amostrais
+A distância mínima considera todo o conjunto de posições disponível para cada par. Ela pode corresponder a registros de anos diferentes. A coluna de coincidência anual informa em quais anos houve alguma combinação de posições abaixo do limiar, sem pressupor que essa combinação seja a que produziu a distância mínima geral.
 
 ```{r}
-#| label: investigacao-historico
+#| label: proximidade-por-projeto
 #| results: asis
-if (!has_station_investigation) {
-  cat("<p>Os resultados de histórico anual das unidades não estão disponíveis para esta rodada.</p>\n")
-} else {
-  temporal_project_summary <- do.call(rbind, lapply(sort(unique(temporal_history$project_id)), function(project) {
-    subset <- temporal_history[temporal_history$project_id == project, , drop = FALSE]
+if (has_proximity && nrow(nearby_pairs)) {
+  proximity_by_project <- do.call(rbind, lapply(sort(unique(nearby_pairs$project_id)), function(project) {
+    rows <- nearby_pairs[nearby_pairs$project_id == project, , drop = FALSE]
     data.frame(
-      Projeto = subset$project_short_name[1], Unidades = nrow(subset),
-      `Primeiro ano do projeto` = subset$first_project_year[1],
-      `Último ano disponível do projeto` = subset$last_project_year[1],
-      `Com lacuna e reaparecimento` = sum(subset$n_gap_years > 0),
-      `Não observadas nos anos posteriores` = sum(subset$n_later_project_years_without_record > 0),
-      `Observadas no último ano do projeto` = sum(subset$observed_in_latest_project_year),
+      Projeto = project_label(project),
+      `Pares abaixo do limiar` = nrow(rows),
+      `Com coincidência anual` = sum(rows$n_nearby_same_years > 0),
+      `Sem coincidência anual documentada` = sum(rows$n_nearby_same_years == 0),
       check.names = FALSE
     )
   }))
-  report_table(temporal_project_summary, "Presença e continuidade por projeto. Lacunas e ausência posterior podem coexistir na mesma unidade.")
-  cat("<p><strong>Legenda da matriz anual:</strong> P = presente; R = presente após lacuna; L = lacuna entre registros; A = não observada após o último registro da unidade; — = antes da primeira observação; SD = ano sem dados de qualquer unidade do projeto; ? = ano não avaliável.</p>\n")
-  for (project in sort(unique(temporal_history$project_id))) {
-    subset <- temporal_history[temporal_history$project_id == project, , drop = FALSE]
-    cat("<details", if (project == "2002576") " open" else "", "><summary><strong>",
-        html_escape(subset$project_short_name[1]), "</strong> — histórico de ", nrow(subset),
-        " unidades</summary>\n", sep = "")
-    report_presence_matrix(project)
+  report_table(proximity_by_project, paste0("Pares de placenames com distância inferior a ", number(nearby_threshold_m), " m, por projeto."))
+  for (project in sort(unique(nearby_pairs$project_id))) {
+    rows <- nearby_pairs[nearby_pairs$project_id == project, , drop = FALSE]
+    cat("<h3>", html_escape(project_label(project)), "</h3>\n", sep = "")
     report_table(data.frame(
-      Unidade = subset$placename_key, `Anos com registro` = subset$observed_start_years,
-      `Lacunas com reaparecimento` = subset$gap_years_with_later_return,
-      `Anos de reaparecimento` = subset$return_years_after_gap,
-      `Anos posteriores sem registro da unidade` = subset$project_years_after_last_record,
-      `Observação` = subset$interpretation,
+      Par = rows$pair_reference,
+      `Placename A` = rows$unit_a,
+      `Placename B` = rows$unit_b,
+      `Distância mínima geral (m)` = distance(rows$minimum_distance_m),
+      `Anos com proximidade` = ifelse(nzchar(rows$nearby_same_years), rows$nearby_same_years, "Não documentados no mesmo ano"),
       check.names = FALSE
-    ), "Histórico de cada unidade nos anos de início de deployments disponíveis no projeto.")
-    cat("</details>\n")
+    ), paste0("Pares selecionados em ", project_name(project), ". Os anos indicam proximidade entre registros do mesmo ano de operação."),
+    list_columns = "Anos com proximidade")
   }
-  project_gaps <- annual_coverage[!annual_coverage$project_has_records, , drop = FALSE]
-  cat('<details><summary>Anos inteiros sem registros do projeto</summary>\n')
-  if (nrow(project_gaps)) {
-    report_table(data.frame(Projeto = project_gaps$project_short_name, Ano = project_gaps$year),
-                 "Anos entre o primeiro e o último ano do projeto sem início de deployment nos exports.")
-  } else cat("<p>Não há lacunas de calendário dentro do intervalo observado dos projetos.</p>\n")
-  cat("</details>\n")
-  period_issues <- period_audit[nzchar(period_audit$issue_codes), , drop = FALSE]
-  if (nrow(period_issues)) {
-    report_table(data.frame(Projeto = period_issues$project_short_name, Deployment = period_issues$deployment_id,
-                           `Início informado` = period_issues$start_date_raw, `Fim informado` = period_issues$end_date_raw,
-                           `Motivo` = period_issues$issue_codes, check.names = FALSE),
-                 "Períodos que limitam a comparação temporal, sem correção das datas.")
-  } else cat("<p>Todos os deployments possuem início e fim interpretáveis para esta análise de datas, sem inversão do intervalo. Isso não valida os relógios ou timestamps das imagens.</p>\n")
+} else if (has_proximity) {
+  cat("<p>Não foram identificados pares de placenames distintos abaixo do limiar de proximidade.</p>\n")
+} else {
+  cat("<p>Resultados de proximidade não disponíveis.</p>\n")
 }
 ```
 
-O último ano de referência é **o último ano com início de deployment registrado para cada projeto**, não o ano atual. Uma unidade sem registro nos anos seguintes pode ter sido renomeada, substituída, não amostrada, omitida do export ou descontinuada. **A descontinuação não é confirmada por esta análise.** Da mesma forma, o primeiro aparecimento de um nome não prova a instalação de uma nova unidade física.
+# Distribuição espacial das ocorrências
 
-Uma ausência de todas as unidades de um projeto em determinado ano é descrita como lacuna de cobertura dos exports. Ela não é atribuída individualmente às unidades como interrupção comprovada. A análise também não presume que houve campanha anual quando o projeto inteiro não possui registros naquele ano.
-
-# Mapa das possíveis inconsistências
-
-Os marcadores representam posições cadastradas no projeto. Unidades amostrais que compartilham a mesma posição de comparação aparecem juntas no conteúdo do marcador. Ao clicar nos pontos, é possível consultar unidades, deployments, anos, sinalizações de coordenadas, proximidade e histórico anual.
-
-- **Vermelho:** coordenadas ou metadados de câmera sinalizados para revisão.
-- **Laranja:** unidades próximas no mesmo ano, segundo o limiar de **`r number(nearby_threshold_m)` m**.
-- **Azul:** proximidade registrada em outros períodos, sem par próximo confirmado no mesmo ano.
-- **Verde:** ausência de sinalizações espaciais nos critérios representados.
-
-As linhas laranjas conectam os deployments próximos registrados no mesmo ano. A coincidência de ano não confirma sobreposição dos períodos; as datas e os anos com sobreposição podem ser consultados nos pontos e nas linhas.
+O mapa reúne as posições cadastradas, as sinalizações de coordenadas e os pares selecionados pelo critério de proximidade. Posições coincidentes são agrupadas por projeto. Os marcadores apresentam os nomes originais, os identificadores dos deployments e as ocorrências associadas à localização.
 
 ```{r}
-#| label: mapa-conflitos-coordenadas
+#| label: mapa-coordenadas
 source(
   file.path(project_root, "02_scripts", "auditoria_curadoria", "funcoes", "mapa_conflitos_coordenadas.R"),
   local = TRUE,
@@ -562,22 +338,166 @@ mapa_conflitos_coordenadas(
 )
 ```
 
-O mapa permite alternar imagem de satélite e mapa de referência e mostrar ou ocultar as camadas de sinalização e os limites das UCs. A camada local de limites de agosto de 2026 serve como referência visual; não corresponde a um teste automático de pertencimento. Coordenadas sem geometria válida não são representadas. Nenhuma cor confirma erro ou indica uma correção a realizar.
+<p class="figure-caption"><strong>Figura 1.</strong> Posições dos deployments e ocorrências espaciais selecionadas. As linhas conectam posições de placenames distintos abaixo do limiar de proximidade com coincidência anual. Os limites das UCs são apresentados como referência cartográfica; não foi realizado teste automático de inclusão dos pontos nos polígonos.</p>
 
-# Alcance e limitações da validação
+```{r}
+#| label: coordenadas-nao-representadas
+#| results: asis
+if (n_without_geometry > 0) {
+  cat("<p>Não foram representados no mapa ", number(n_without_geometry),
+      " deployments com coordenadas ausentes, não interpretáveis, fora do domínio geográfico ou com valores divergentes. Esses registros permanecem nas tabelas de ocorrências.</p>\n", sep = "")
+}
+```
 
-As verificações constituem uma triagem de possíveis inconsistências. A ausência de sinalizações não comprova a exatidão da posição em campo, e a presença de uma sinalização não confirma erro.
+# Conferência dos registros no Wildlife Insights
 
-Permanecem como limitações:
+As ocorrências delimitam os cadastros que precisam ser confrontados com as fichas de instalação, os registros de campo e a malha amostral. A conferência deve documentar a origem da divergência antes de definir qualquer alteração na plataforma.
 
-- A checagem do envelope do Brasil é ampla e condicionada ao código de país `BRA`; não testa os limites territoriais ou os polígonos das UCs.
-- A hipótese de inversão depende desse envelope. A ausência da flag não descarta todas as inversões possíveis.
-- Coordenadas compartilhadas são comparadas dentro de cada projeto e com arredondamento a seis casas decimais; pontos apenas próximos podem não formar o mesmo grupo.
-- A estabilidade da estação depende do `placename` usado no agrupamento. Uma mudança de nome pode separar históricos da mesma estação.
-- A classificação espacial não incorpora todos os conflitos de metadados e não substitui as tabelas de câmera e de repetições apresentadas acima.
-- O limiar de proximidade é um critério de atenção, não uma regra automática de erro. A sobreposição é avaliada por datas de deployment; o relatório não valida os horários das imagens ou a independência estatística das unidades.
-- A continuidade usa nomes de comparação e anos de início como referência. Renomeações, cobertura incompleta dos exports e diferenças entre campanhas podem explicar lacunas ou ausência posterior. Não são confirmadas descontinuações.
-- Formato válido, possibilidade de gerar geometria e ausência de flags não comprovam que a coordenada representa o local real da instalação.
-- A validação completa de datas e horas das imagens, taxonomia e repetição de imagens pertence a outras auditorias.
+```{r}
+#| label: verificacoes-por-ocorrencia
+#| results: asis
+verification_actions <- c(
+  MISSING_PLACENAME = "Identificar a unidade à qual pertencem as coordenadas e conferir sua associação ao deployment.",
+  MISSING_COORDINATE = "Localizar o registro de campo da posição e verificar o preenchimento de latitude e longitude na plataforma.",
+  INVALID_DECIMAL_FORMAT = "Conferir a notação da coordenada e a transcrição dos valores do registro de campo.",
+  MULTIPLE_COORDINATE_VALUES = "Comparar todas as linhas do deployment e determinar a origem dos valores divergentes.",
+  OUTSIDE_WORLD_RANGE = "Conferir os valores, os sinais e os campos de latitude e longitude com a fonte de campo.",
+  POSSIBLE_LATITUDE_LONGITUDE_SWAP = "Conferir a ordem de latitude e longitude na plataforma e no registro de campo.",
+  OUTSIDE_BRAZIL_ENVELOPE = "Conferir os sinais, a posição e a associação ao projeto; comparar com a localização prevista.",
+  SHARED_COORDINATES_DIFFERENT_PLACENAMES = "Comparar os locais previstos para os placenames e a correspondência entre nomes, deployments e coordenadas.",
+  STATION_SHIFT_OVER_30_M = "Confrontar as posições cadastradas com as fichas de instalação para distinguir variação de registro e mudança de local."
+)
+observed <- vapply(summary_metrics, metric_number, numeric(1)) > 0
+action_display <- data.frame(
+  Ocorrência = unname(flag_labels[observed]),
+  `Conferência necessária` = unname(verification_actions[observed]),
+  check.names = FALSE
+)
+if (nrow(nearby_pairs)) {
+  action_display <- rbind(action_display, data.frame(
+    Ocorrência = paste0("Placenames distintos a menos de ", number(nearby_threshold_m), " m"),
+    `Conferência necessária` = "Conferir a distância na malha amostral e a associação entre identificadores e locais. Verificar possíveis renomeações ou mudanças de local nos registros de instalação.",
+    check.names = FALSE
+  ))
+}
+if (nrow(action_display)) {
+  report_table(action_display, "Conferências documentais correspondentes às ocorrências identificadas.")
+} else {
+  cat("<p>Não foram selecionados cadastros pelos critérios espaciais disponíveis.</p>\n")
+}
+```
 
-As sinalizações devem ser interpretadas em conjunto com as fichas de instalação, a malha amostral e o contexto de cada projeto. A confirmação de inconsistências ou de descontinuação de unidades exige evidência adicional aos exports.
+# Limites da análise
+
+As ocorrências representam indícios a investigar. A proximidade inferior a `r number(nearby_threshold_m)` m e a variação de posição superior a `r number(station_threshold_m)` m são critérios de seleção, não comprovação de erro. Mudanças de nome podem separar registros de um mesmo local, enquanto o uso do mesmo nome para locais diferentes pode reunir posições que precisam ser distinguidas.
+
+O retângulo de referência para o Brasil não corresponde ao limite territorial do país nem ao limite das UCs. A verificação automática de pertencimento à UC permanece pendente. A imagem de satélite e os polígonos permitem inspeção visual, mas a confirmação da posição depende de documentação de campo. Formato válido e ausência de sinalização não demonstram exatidão geográfica.
+
+As comparações espaciais foram restritas aos registros do mesmo projeto. O relatório não examina a consistência das datas, a duração ou a continuidade das campanhas de monitoramento.
+
+# Apêndice — Registros para conferência
+
+## Deployments com sinalização de coordenadas
+
+Os valores abaixo correspondem ao conteúdo dos exports. Quando há valores distintos para o mesmo campo, todos são apresentados. A indicação `<MISSING>` identifica ausência no campo de origem.
+
+```{r}
+#| label: registros-sinalizados
+#| results: asis
+if (!nrow(review_rows)) {
+  cat("<p>Não há deployments sinalizados pelos critérios de coordenadas.</p>\n")
+} else {
+  for (project in sort(unique(review_rows$project_id))) {
+    rows <- review_rows[review_rows$project_id == project, , drop = FALSE]
+    rows <- rows[order(rows$placename_raw, rows$deployment_id), , drop = FALSE]
+    cat("<details><summary>", html_escape(project_label(project)), " — ", number(nrow(rows)), " deployments</summary>\n", sep = "")
+    report_table(data.frame(
+      Placename = rows$placename_raw_values,
+      Deployment = rows$deployment_id,
+      `Longitude original` = rows$longitude_raw_values,
+      `Latitude original` = rows$latitude_raw_values,
+      Ocorrência = describe_flags(rows$coordinate_flag_codes),
+      check.names = FALSE
+    ), paste0("Registros sinalizados em ", project_name(project), ". Valores de coordenada preservados como texto de origem."),
+    list_columns = c("Placename", "Longitude original", "Latitude original", "Ocorrência"),
+    code_columns = "Deployment")
+    cat("</details>\n")
+  }
+}
+```
+
+## Posições que determinam a distância mínima de cada par
+
+São relacionados os deployments que contêm as posições usadas na distância mínima geral. Os dois extremos do par podem pertencer a anos diferentes.
+
+```{r}
+#| label: posicoes-distancia-minima
+#| results: asis
+if (nrow(nearby_pairs)) {
+  for (project in sort(unique(nearby_pairs$project_id))) {
+    pairs <- nearby_pairs[nearby_pairs$project_id == project, , drop = FALSE]
+    endpoint_rows <- list()
+    for (i in seq_len(nrow(pairs))) {
+      for (side in c("a", "b")) {
+        longitude <- pairs[[paste0("longitude_", side)]][i]
+        latitude <- pairs[[paste0("latitude_", side)]][i]
+        unit <- pairs[[paste0("unit_", side)]][i]
+        selected <- which(deployments$project_id == project & deployments$placename_key == unit &
+          deployments$valid_coordinate_for_geometry &
+          abs(deployments$longitude_num - longitude) < 1e-9 &
+          abs(deployments$latitude_num - latitude) < 1e-9)
+        endpoint_rows[[length(endpoint_rows) + 1L]] <- data.frame(
+          Par = pairs$pair_reference[i],
+          Placename = collapse_values(deployments$placename_raw[selected]),
+          Longitude = coordinate(longitude), Latitude = coordinate(latitude),
+          Deployments = collapse_values(deployments$deployment_id[selected]),
+          check.names = FALSE
+        )
+      }
+    }
+    cat("<details><summary>", html_escape(project_label(project)), " — posições dos pares</summary>\n", sep = "")
+    report_table(do.call(rbind, endpoint_rows), paste0("Posições correspondentes às distâncias mínimas em ", project_name(project), "."),
+                 list_columns = c("Placename", "Deployments"), code_columns = "Deployments")
+    cat("</details>\n")
+  }
+} else {
+  cat("<p>Não há pares de proximidade para relacionar.</p>\n")
+}
+```
+
+## Pares de deployments com proximidade no mesmo ano
+
+Cada linha reúne os deployments comparados, suas posições e os anos associados à proximidade. Os nomes dos placenames correspondentes a cada par constam na seção de resultados.
+
+```{r}
+#| label: registros-proximos-mesmo-ano
+#| results: asis
+if (nrow(nearby_details)) {
+  keys <- deployment_key(deployments$project_id, deployments$deployment_id)
+  for (project in sort(unique(nearby_details$project_id))) {
+    details <- nearby_details[nearby_details$project_id == project, , drop = FALSE]
+    detail_groups <- split(seq_len(nrow(details)), paste(details$pair_id, details$deployment_a, details$deployment_b, sep = "\u001f"))
+    detail_rows <- lapply(detail_groups, function(indices) {
+      i <- indices[1]
+      a <- match(deployment_key(project, details$deployment_a[i]), keys)
+      b <- match(deployment_key(project, details$deployment_b[i]), keys)
+      data.frame(
+        Par = pair_reference(details$pair_id[i]),
+        `Deployment A` = details$deployment_a[i],
+        `Longitude / latitude A` = paste(coordinate(deployments$longitude_num[a]), coordinate(deployments$latitude_num[a]), sep = " / "),
+        `Deployment B` = details$deployment_b[i],
+        `Longitude / latitude B` = paste(coordinate(deployments$longitude_num[b]), coordinate(deployments$latitude_num[b]), sep = " / "),
+        `Distância (m)` = distance(min(details$distance_m[indices])),
+        Anos = collapse_values(details$operation_year[indices]),
+        check.names = FALSE
+      )
+    })
+    cat("<details><summary>", html_escape(project_label(project)), " — deployments próximos no mesmo ano</summary>\n", sep = "")
+    report_table(do.call(rbind, detail_rows), paste0("Deployments com proximidade no mesmo ano em ", project_name(project), ". Coordenadas em graus decimais."),
+                 list_columns = "Anos", code_columns = c("Deployment A", "Deployment B"))
+    cat("</details>\n")
+  }
+} else {
+  cat("<p>Não há combinações de deployments com proximidade documentada no mesmo ano.</p>\n")
+}
+```

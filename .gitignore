@@ -31,3 +31,6 @@ _freeze/
 /04_reports/*.knit.md
 /04_reports/*.utf8.md
 /04_reports/*.rmarkdown
+
+/.quarto/
+**/*.quarto_ipynb
