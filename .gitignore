@@ -14,5 +14,6 @@ github-token.R
 .positai
 bin/
 testes/
+01_entrada/dados_referencia/
 03_saida/auditoria_curadoria/
 04/reports/Relatório de Auditoria de Coordenadas_files/
