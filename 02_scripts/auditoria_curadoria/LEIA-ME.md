@@ -116,6 +116,14 @@ View(auditoria$datas_horas$field_notes)
 
 `image_records_for_review` contém os valores originais e os identificadores das imagens com ocorrências, além dos registros que delimitam os intervalos superiores a sete dias. `source_record` identifica a posição do registro no CSV, sem contar o cabeçalho. `field_notes` preserva as observações de campo, sem interpretar seu texto como instrução de correção. As diferenças horárias entre extremos ficam indisponíveis quando há timestamps ausentes, inválidos ou sem hora; as imagens com hora interpretável continuam sendo verificadas individualmente.
 
+### Relatório em Quarto
+
+Abra `04_reports/relatorio_auditoria_datas_horas.qmd` e use **Render** no RStudio. O relatório lê o bloco `datas_horas` do RDS e não executa novamente a etapa 03. Se esse bloco ainda não existir, execute `03_auditar_datas_horas.R` antes de renderizar. Com os resultados disponíveis e os exports inalterados, basta renderizar o QMD.
+
+O relatório apresenta os critérios dos scripts de referência, as diferenças em dias e horas, a síntese por UC e ano, os gráficos de operação e os registros para conferência no Wildlife Insights. Os gráficos são divididos em painéis de até 30 deployments. As tabelas extensas contêm todos os registros, com busca e paginação; não dependem do pacote DT.
+
+O HTML será salvo em `03_saida/relatorios/04_reports/relatorio_auditoria_datas_horas.html`. As renderizações reutilizam esse destino. O QMD permanece versionado; o HTML e os arquivos auxiliares são resultados locais ignorados pelo Git.
+
 ## Consulta dos resultados
 
 ```r

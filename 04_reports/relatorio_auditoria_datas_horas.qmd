@@ -1,0 +1,546 @@
+---
+title: "Auditoria de datas e horas"
+subtitle: "Registros TEAM/Monitora no Wildlife Insights"
+author: "Ana Carolina Ribeiro"
+date: last-modified
+lang: pt-BR
+output-file: relatorio_auditoria_datas_horas.html
+params:
+  project_root: null
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 2
+    toc-location: left
+    number-sections: true
+    html-table-processing: none
+    embed-resources: true
+    include-in-header:
+      text: |
+        <style>
+        :root { --bs-body-color: #242424; --bs-link-color: #27526d; }
+        main { font-family: Georgia, "Times New Roman", serif; line-height: 1.65; }
+        h1, h2, h3, #TOC, .quarto-title-meta { font-family: Arial, sans-serif; }
+        h1, h2, h3 { color: #20394a; }
+        .table-responsive { margin: 1rem 0 1.5rem; overflow-x: auto; }
+        .audit-table { width: 100%; border-collapse: collapse; font: 0.84rem/1.45 Arial, sans-serif; }
+        .audit-table caption { caption-side: top; text-align: left; color: #242424; padding-bottom: .55rem; }
+        .audit-table thead { border-top: 1.5px solid #444; border-bottom: 1px solid #777; }
+        .audit-table tbody { border-bottom: 1.5px solid #444; }
+        .audit-table th, .audit-table td { padding: .5rem .6rem; vertical-align: top; text-align: left; }
+        .audit-table td { border-bottom: 1px solid #e0e0e0; overflow-wrap: anywhere; max-width: 30rem; }
+        .audit-table .numeric { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+        .record-id { font-family: Consolas, monospace; font-size: .9em; }
+        .figure-caption { font-size: .9rem; color: #444; margin: .6rem 0 1.7rem; }
+        details { margin: 1.1rem 0; }
+        summary { font-family: Arial, sans-serif; color: #20394a; cursor: pointer; }
+        .table-controls, .table-navigation { display: none; gap: .7rem; align-items: center; flex-wrap: wrap; font: .82rem Arial, sans-serif; }
+        .table-ready .table-controls, .table-ready .table-navigation { display: flex; }
+        .table-controls input { max-width: 22rem; padding: .35rem .5rem; border: 1px solid #aaa; border-radius: 3px; }
+        .table-controls select, .table-navigation button { background: #fff; color: #242424; border: 1px solid #aaa; border-radius: 3px; padding: .3rem .5rem; }
+        .table-navigation { margin: -.8rem 0 1.5rem; }
+        .table-navigation button:disabled { opacity: .45; }
+        .table-status { margin-right: auto; }
+        </style>
+    include-after-body:
+      text: |
+        <script>
+        (() => {
+          const normalize = value => String(value ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR");
+          const indices = value => new Set((value || "").split(",").filter(Boolean).map(Number));
+          const initialize = widget => {
+            if (widget.dataset.ready) return;
+            const source = document.getElementById(widget.dataset.tableId);
+            const rows = JSON.parse(source.textContent);
+            const table = widget.querySelector("table");
+            const body = table.tBodies[0];
+            const search = widget.querySelector("input[type=search]");
+            const size = widget.querySelector("select");
+            const previous = widget.querySelector("[data-page=previous]");
+            const next = widget.querySelector("[data-page=next]");
+            const status = widget.querySelector(".table-status");
+            const codeColumns = indices(widget.dataset.codeColumns);
+            const listColumns = indices(widget.dataset.listColumns);
+            const numericColumns = indices(widget.dataset.numericColumns);
+            const formatter = new Intl.NumberFormat("pt-BR");
+            let selected = rows;
+            let page = 0;
+            let searchIndex;
+            const paint = () => {
+              const pageSize = Number(size.value);
+              page = Math.min(page, Math.max(0, Math.ceil(selected.length / pageSize) - 1));
+              const start = page * pageSize;
+              const stop = Math.min(selected.length, start + pageSize);
+              const fragment = document.createDocumentFragment();
+              for (let i = start; i < stop; i++) {
+                const row = document.createElement("tr");
+                selected[i].forEach((value, j) => {
+                  const cell = document.createElement("td");
+                  if (numericColumns.has(j)) cell.classList.add("numeric");
+                  const content = document.createElement("span");
+                  if (codeColumns.has(j)) content.classList.add("record-id");
+                  const parts = listColumns.has(j) ? String(value ?? "—").split(" | ") : [value ?? "—"];
+                  parts.forEach((part, k) => {
+                    if (k) content.appendChild(document.createElement("br"));
+                    content.appendChild(document.createTextNode(String(part)));
+                  });
+                  cell.appendChild(content);
+                  row.appendChild(cell);
+                });
+                fragment.appendChild(row);
+              }
+              if (!selected.length) {
+                const row = document.createElement("tr");
+                const cell = document.createElement("td");
+                cell.colSpan = table.tHead.rows[0].cells.length;
+                cell.textContent = "Nenhum registro corresponde à busca.";
+                row.appendChild(cell);
+                fragment.appendChild(row);
+              }
+              body.replaceChildren(fragment);
+              status.textContent = selected.length ? `Registros ${formatter.format(start + 1)}–${formatter.format(stop)} de ${formatter.format(selected.length)}` : "0 registros";
+              if (selected.length !== rows.length) status.textContent += ` (${formatter.format(rows.length)} no total)`;
+              previous.disabled = page === 0;
+              next.disabled = stop >= selected.length;
+            };
+            let searchTimer;
+            search.addEventListener("input", () => {
+              clearTimeout(searchTimer);
+              searchTimer = setTimeout(() => {
+                const query = normalize(search.value.trim());
+                if (query && !searchIndex) searchIndex = rows.map(row => normalize(row.join(" ")));
+                selected = query ? rows.filter((row, i) => searchIndex[i].includes(query)) : rows;
+                page = 0;
+                paint();
+              }, 150);
+            });
+            size.addEventListener("change", () => { page = 0; paint(); });
+            previous.addEventListener("click", () => { page = Math.max(0, page - 1); paint(); });
+            next.addEventListener("click", () => { page++; paint(); });
+            source.textContent = "";
+            widget.dataset.ready = "true";
+            widget.classList.add("table-ready");
+            paint();
+          };
+          const start = () => {
+            const widgets = document.querySelectorAll(".audit-table-widget");
+            if ("IntersectionObserver" in window) {
+              const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+                if (entry.isIntersecting) { initialize(entry.target); observer.unobserve(entry.target); }
+              }), { rootMargin: "300px" });
+              widgets.forEach(widget => observer.observe(widget));
+            } else widgets.forEach(initialize);
+          };
+          if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+          else start();
+        })();
+        </script>
+execute:
+  echo: false
+  warning: false
+  message: false
+  error: false
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+if (.Platform$OS.type == "windows" && !isTRUE(l10n_info()[["UTF-8"]])) {
+  invisible(suppressWarnings(Sys.setlocale("LC_CTYPE", ".UTF-8")))
+  if (!isTRUE(l10n_info()[["UTF-8"]])) stop("Não foi possível ativar UTF-8 para renderizar o relatório.", call. = FALSE)
+}
+if (!exists("params", inherits = FALSE)) params <- list(project_root = NULL)
+find_project_root <- function(start_directory = getwd()) {
+  current <- normalizePath(start_directory, winslash = "/", mustWork = TRUE)
+  repeat {
+    if (file.exists(file.path(current, "monitora-team-pipelines.Rproj"))) return(current)
+    parent <- dirname(current)
+    if (identical(parent, current)) stop("Abra o projeto no RStudio ou informe project_root.", call. = FALSE)
+    current <- parent
+  }
+}
+root_parameter <- params$project_root
+project_root <- if (is.null(root_parameter) || !nzchar(root_parameter)) find_project_root() else find_project_root(root_parameter)
+result_file <- file.path(project_root, "01_entrada", "dados_processados", "auditoria_curadoria", "auditoria_curadoria.rds")
+if (!file.exists(result_file)) {
+  stop("Resultado não encontrado: ", result_file, "\nExecute 03_auditar_datas_horas.R após a importação.", call. = FALSE)
+}
+audit_result <- readRDS(result_file)
+date_audit <- audit_result$datas_horas
+if (is.null(date_audit)) {
+  stop("O RDS ainda não contém a auditoria de datas e horas. Execute 03_auditar_datas_horas.R no RStudio.", call. = FALSE)
+}
+required_packages <- c("ggplot2", "jsonlite")
+missing_packages <- required_packages[!vapply(required_packages, requireNamespace, logical(1), quietly = TRUE)]
+if (length(missing_packages)) stop("Pacotes necessários ao relatório: ", paste(missing_packages, collapse = ", "), call. = FALSE)
+source(file.path(project_root, "02_scripts", "auditoria_curadoria", "funcoes", "auditar_datas_horas.R"),
+       local = TRUE, encoding = "UTF-8")
+
+deployments <- as.data.frame(date_audit$deployment_date_audit)
+flags <- as.data.frame(date_audit$date_flags)
+dictionary <- as.data.frame(date_audit$flag_dictionary)
+evidence <- as.data.frame(date_audit$image_records_for_review)
+daily <- as.data.frame(date_audit$daily_records)
+field_notes <- as.data.frame(date_audit$field_notes)
+summary_values <- as.data.frame(date_audit$summary)
+gap_days <- as.numeric(date_audit$metadata$boundary_gap_days)
+minimum_days <- as.numeric(date_audit$metadata$minimum_deployment_days)
+number <- function(x) ifelse(is.na(x), "—", format(x, big.mark = ".", decimal.mark = ",", scientific = FALSE, trim = TRUE))
+decimal <- function(x) ifelse(is.na(x), "—", formatC(x, format = "f", digits = 2, decimal.mark = ","))
+metric <- function(name) as.numeric(summary_values$value[match(name, summary_values$metric)])
+key <- function(project, deployment) paste(project, deployment, sep = "\u001f")
+project_ids <- sort(unique(as.character(deployments$project_id)))
+project_name <- function(ids) {
+  names <- as.character(deployments$project_short_name[match(ids, deployments$project_id)])
+  absent <- is.na(names) | !nzchar(names)
+  names[absent] <- as.character(ids[absent])
+  names
+}
+project_label <- function(id) paste0(project_name(id), " (", id, ")")
+year_label <- function(year) ifelse(is.na(year), "Ano de início não determinado", paste0("Ano de início: ", year))
+html_escape <- function(x) {
+  x <- as.character(x)
+  x[is.na(x)] <- "—"
+  x <- gsub("&", "&amp;", x, fixed = TRUE)
+  x <- gsub("<", "&lt;", x, fixed = TRUE)
+  x <- gsub(">", "&gt;", x, fixed = TRUE)
+  gsub('"', "&quot;", x, fixed = TRUE)
+}
+flag_labels <- stats::setNames(as.character(dictionary$flag_description), dictionary$flag_code)
+describe_flags <- function(codes) {
+  vapply(strsplit(as.character(codes), " | ", fixed = TRUE), function(values) {
+    values <- values[!is.na(values) & nzchar(values)]
+    labels <- unname(flag_labels[values])
+    labels[is.na(labels)] <- values[is.na(labels)]
+    paste(labels, collapse = " | ")
+  }, character(1))
+}
+flag_count <- function(code) length(unique(key(flags$project_id[flags$flag_code == code], flags$deployment_id[flags$flag_code == code])))
+table_counter <- 0L
+report_table <- function(data, caption, list_columns = character(), code_columns = character(), numeric_columns = character()) {
+  table_counter <<- table_counter + 1L
+  numeric_columns <- union(numeric_columns, names(data)[vapply(data, is.numeric, logical(1))])
+  for (name in names(data)) {
+    if (is.numeric(data[[name]])) data[[name]] <- number(data[[name]]) else data[[name]] <- as.character(data[[name]])
+    data[[name]][is.na(data[[name]])] <- "—"
+  }
+  paginate <- nrow(data) > 25L
+  id <- paste0("date-table-", table_counter)
+  column_indices <- function(columns) paste(which(names(data) %in% columns) - 1L, collapse = ",")
+  if (paginate) {
+    cat('<div class="audit-table-widget" data-table-id="', id,
+        '" data-code-columns="', column_indices(code_columns),
+        '" data-list-columns="', column_indices(list_columns),
+        '" data-numeric-columns="', column_indices(numeric_columns), '">\n', sep = "")
+    cat('<div class="table-controls"><label for="', id, '-search">Buscar nesta tabela</label><input id="', id,
+        '-search" type="search" autocomplete="off"><label for="', id, '-size">Registros por página</label><select id="', id,
+        '-size"><option>25</option><option>50</option><option>100</option></select></div>\n', sep = "")
+  }
+  cat('<div class="table-responsive"><table class="audit-table">\n<caption><strong>Tabela ', table_counter,
+      '.</strong> ', html_escape(caption), '</caption><thead><tr>', sep = "")
+  for (name in names(data)) {
+    cat('<th scope="col"', if (name %in% numeric_columns) ' class="numeric"' else "", ">", html_escape(name), "</th>", sep = "")
+  }
+  cat("</tr></thead><tbody>\n")
+  if (!paginate) {
+    for (i in seq_len(nrow(data))) {
+      cat("<tr>")
+      for (name in names(data)) {
+        value <- html_escape(data[[name]][i])
+        if (name %in% list_columns) value <- gsub(" | ", "<br>", value, fixed = TRUE)
+        if (name %in% code_columns) value <- paste0('<span class="record-id">', value, "</span>")
+        cat("<td", if (name %in% numeric_columns) ' class="numeric"' else "", ">", value, "</td>", sep = "")
+      }
+      cat("</tr>\n")
+    }
+  }
+  cat("</tbody></table></div>\n")
+  if (paginate) {
+    payload <- jsonlite::toJSON(data, dataframe = "values", na = "null", auto_unbox = FALSE)
+    payload <- paste(strsplit(payload, "<", fixed = TRUE)[[1]], collapse = "\\u003c")
+    cat('<div class="table-navigation"><span class="table-status" role="status" aria-live="polite"></span>',
+        '<button type="button" data-page="previous">Anterior</button><button type="button" data-page="next">Próxima</button></div>\n',
+        '<script type="application/json" id="', id, '">', payload, '</script>\n',
+        '<noscript>Habilite JavaScript para consultar os registros desta tabela.</noscript></div>\n', sep = "")
+  }
+}
+
+n_deployments <- nrow(deployments)
+n_review <- sum(deployments$audit_status == "REVIEW")
+n_before <- sum(deployments$n_before_start_date > 0 | deployments$n_before_start_time > 0)
+n_after <- sum(deployments$n_after_end_date > 0 | deployments$n_after_end_time > 0)
+n_start_gap <- sum(deployments$diff_start_days > gap_days, na.rm = TRUE)
+n_end_gap <- sum(deployments$diff_end_days > gap_days, na.rm = TRUE)
+n_short <- flag_count("SHORT_DEPLOYMENT_PERIOD")
+n_start_hour <- sum(deployments$start_specific_clock)
+n_end_hour <- sum(deployments$end_specific_clock)
+evidence$flag_description <- describe_flags(evidence$flag_codes)
+```
+
+# Objetivo e base examinada
+
+Identificar possíveis inconsistências entre os períodos cadastrados de monitoramento e as datas e horas das imagens, reunindo evidências para a conferência dos registros no Wildlife Insights. Foram examinados **`r number(n_deployments)` deployments**, distribuídos em **`r number(length(project_ids))` projetos**, e **`r number(metric("n_image_records_read"))` registros de imagem**.
+
+As comparações são apresentadas por UC e ano de início do deployment. Os períodos que atravessam a mudança de ano são examinados integralmente. Esse agrupamento segue a conferência do script de referência e não estabelece, por si só, a delimitação de cada campanha.
+
+# Critérios e interpretação
+
+Os procedimentos seguem a comparação entre períodos cadastrados e registros fotográficos utilizada em `03_check_dates.R`, `calculate_time_lag.R` e `plot_deployment_operation.R`. A auditoria de datas e horas sistematiza essa conferência, mantendo os registros e os valores originais para investigação.
+
+## Diferenças nas extremidades
+
+Para cada deployment, foram calculadas:
+
+$$
+\begin{aligned}
+\Delta_{\mathrm{inicial}} &= d_{\mathrm{primeiro\ registro}} - d_{\mathrm{início\ cadastrado}} \\
+\Delta_{\mathrm{final}} &= d_{\mathrm{término\ cadastrado}} - d_{\mathrm{último\ registro}}.
+\end{aligned}
+$$
+
+As diferenças em dias utilizam as datas de calendário, como no procedimento de referência. Valores negativos indicam imagens fora do período cadastrado. Valores positivos representam intervalos sem registros nas extremidades; são selecionados para conferência quando superiores a **`r number(gap_days)` dias**. A duração apresentada corresponde à diferença entre as datas cadastradas de término e início.
+
+```{r}
+#| label: criterios-de-conferencia
+#| results: asis
+report_table(data.frame(
+  Comparação = c("Diferença inicial negativa", "Diferença final negativa",
+                 paste0("Diferença inicial ou final > ", number(gap_days), " dias"),
+                 paste0("Duração cadastrada < ", number(minimum_days), " dias"),
+                 "Imagem fora do horário específico cadastrado"),
+  `Indício observado` = c(
+    "Há imagem com data anterior à instalação cadastrada.",
+    "Há imagem com data posterior à retirada cadastrada.",
+    "O primeiro registro está afastado da instalação, ou o último está afastado da retirada.",
+    "O período cadastrado é curto segundo o limiar do procedimento de referência.",
+    "Na data de instalação ou retirada, há imagem anterior ao início ou posterior ao término informado."),
+  `Conferência necessária` = c(
+    "Comparar as primeiras imagens, a claquete de instalação e a data cadastrada; conferir o relógio da câmera.",
+    "Comparar as últimas imagens, a claquete de retirada e a data cadastrada; conferir o relógio da câmera.",
+    "Examinar as imagens das extremidades, os registros de instalação e retirada e as observações sobre funcionamento.",
+    "Conferir se as datas representam o período efetivo registrado em campo e se há relato de interrupção ou troca de cartão.",
+    "Confrontar o timestamp com o horário documentado de instalação ou retirada e com a referência do relógio."),
+  check.names = FALSE
+), "Leitura dos critérios de seleção e das evidências necessárias à conferência.")
+```
+
+Os períodos inferiores a `r number(minimum_days)` dias são mantidos para investigação. Um intervalo superior a `r number(gap_days)` dias sem registros não comprova falha da câmera: pode refletir a disponibilidade de imagens no export, a ocorrência de registros em campo ou uma divergência no cadastro.
+
+## Datas, horas e preenchimento
+
+Foram examinados valores ausentes, datas e horas não interpretáveis, divergências entre linhas do mesmo deployment e término anterior ao início. A associação das imagens utiliza conjuntamente `project_id` e `deployment_id`.
+
+Os horários originais são preservados. A comparação horária utiliza o início ou o término quando o valor cadastrado é diferente de meia-noite. Valores à meia-noite são tratados como referência de data, sem presumir o horário real de instalação ou retirada. As diferenças horárias entre extremos são apresentadas quando os timestamps do deployment estão completos; imagens individuais com hora interpretável também são verificadas quando há outros timestamps incompletos. O símbolo **—** identifica informação indisponível ou comparação não avaliável.
+
+Todos os registros dos exports foram considerados, incluindo imagens vazias, identificações automáticas e registros sem identificação taxonômica completa. As contagens representam linhas dos exports; uma imagem pode possuir mais de uma identificação. Não foi aplicada conversão de fuso horário.
+
+# Síntese dos resultados
+
+Foram selecionados **`r number(n_review)` deployments** para conferência. Em **`r number(n_before)`**, há registros anteriores ao início cadastrado; em **`r number(n_after)`**, há registros posteriores ao término, considerando as verificações de data e, quando disponíveis, de hora. Foram identificados **`r number(n_start_gap)` deployments** com intervalo inicial superior a `r number(gap_days)` dias, **`r number(n_end_gap)`** com intervalo final superior ao mesmo limiar e **`r number(n_short)`** com duração cadastrada inferior a `r number(minimum_days)` dias.
+
+```{r}
+#| label: sintese-por-criterio
+#| results: asis
+criteria_summary <- dictionary[dictionary$flag_code != "IMAGE_WITHOUT_DEPLOYMENT", , drop = FALSE]
+report_table(data.frame(
+  Critério = criteria_summary$flag_description,
+  `Deployments sinalizados` = vapply(criteria_summary$flag_code, flag_count, integer(1)),
+  check.names = FALSE
+), "Deployments selecionados por critério de conferência.")
+```
+
+Um deployment pode atender a mais de um critério. As contagens da tabela não devem ser somadas para estimar o total de deployments com ocorrência. Para a verificação horária, **`r number(n_start_hour)` deployments** possuem horário específico de início e **`r number(n_end_hour)`** possuem horário específico de término, segundo os critérios descritos.
+
+```{r}
+#| label: resumo-uc-ano
+#| results: asis
+year_summary <- as.data.frame(date_audit$project_year_summary)
+year_summary <- year_summary[order(year_summary$project_short_name, year_summary$start_year, na.last = TRUE), , drop = FALSE]
+report_table(data.frame(
+  UC = project_name(year_summary$project_id),
+  `Ano de início` = ifelse(is.na(year_summary$start_year), "Não determinado", as.character(year_summary$start_year)),
+  Deployments = year_summary$n_deployments,
+  `Com ocorrência` = year_summary$n_deployments_for_review,
+  `Com registros anteriores` = year_summary$n_before_start,
+  `Com registros posteriores` = year_summary$n_after_end,
+  `Intervalo inicial acima do limiar` = year_summary$n_start_gap,
+  `Intervalo final acima do limiar` = year_summary$n_end_gap,
+  check.names = FALSE
+), "Distribuição das ocorrências por UC e ano de início. As categorias podem coexistir no mesmo deployment.")
+if (metric("n_image_records_without_deployment") > 0) {
+  cat("<p>Há <strong>", number(metric("n_image_records_without_deployment")),
+      " registros de imagem</strong> cuja chave de projeto/deployment não foi encontrada no cadastro. A comparação com o período cadastrado não foi possível para esses registros, relacionados no apêndice.</p>\n", sep = "")
+}
+```
+
+# Investigação por UC e ano
+
+As linhas dos gráficos representam os períodos cadastrados, e os pontos representam a distribuição diária dos registros de imagem. Pontos vermelhos assinalam dias com pelo menos um registro fora do período ou do horário específico cadastrado. A leitura das extremidades deve ser feita em conjunto com as tabelas de diferenças e com as observações de campo.
+
+Períodos com datas ausentes, divergentes ou invertidas não são representados por segmentos. Registros sem data interpretável não são posicionados no gráfico e permanecem nas tabelas de conferência.
+
+```{r}
+#| label: investigacao-uc-ano
+#| results: asis
+#| fig-width: 11
+#| fig-height: 9
+#| out-width: "100%"
+#| fig-format: png
+#| dpi: 120
+
+figure_counter <- 0L
+ordered_projects <- project_ids[order(project_name(project_ids))]
+for (project in ordered_projects) {
+  project_rows <- deployments[deployments$project_id == project, , drop = FALSE]
+  cat("\n\n## ", html_escape(project_label(project)), " {#uc-", project, "}\n\n", sep = "")
+  for (year in sort(unique(project_rows$start_year), na.last = TRUE)) {
+    rows <- if (is.na(year)) project_rows[is.na(project_rows$start_year), , drop = FALSE] else {
+      project_rows[!is.na(project_rows$start_year) & project_rows$start_year == year, , drop = FALSE]
+    }
+    rows <- rows[order(rows$deployment_id), , drop = FALSE]
+    review <- rows[rows$audit_status == "REVIEW", , drop = FALSE]
+    cat('<details class="year-review"><summary><strong>', html_escape(year_label(year)), "</strong> — ",
+        number(nrow(rows)), " deployments; ", number(nrow(review)), " com ocorrência</summary>\n\n", sep = "")
+    if (nrow(review)) {
+      report_table(data.frame(
+        Deployment = review$deployment_id, Placename = review$placename,
+        `Motivo de conferência` = review$flag_descriptions,
+        `Registros anteriores` = review$n_before_start_date + review$n_before_start_time,
+        `Registros posteriores` = review$n_after_end_date + review$n_after_end_time,
+        check.names = FALSE
+      ), paste0("Ocorrências em ", project_name(project), "; ", tolower(year_label(year)), "."),
+      list_columns = c("Placename", "Motivo de conferência"), code_columns = "Deployment")
+      report_table(data.frame(
+        Deployment = review$deployment_id,
+        `Início cadastrado` = review$start_date_raw_values,
+        `Primeiro registro` = review$first_timestamp_raw,
+        `Δ inicial (dias)` = decimal(review$diff_start_days),
+        `Último registro` = review$last_timestamp_raw,
+        `Término cadastrado` = review$end_date_raw_values,
+        `Δ final (dias)` = decimal(review$diff_end_days),
+        `Duração (dias)` = decimal(review$duration_days),
+        check.names = FALSE
+      ), "Períodos e extremos dos registros nos deployments sinalizados. Diferenças negativas indicam registros fora do período cadastrado.",
+      list_columns = c("Início cadastrado", "Término cadastrado"), code_columns = "Deployment",
+      numeric_columns = c("Δ inicial (dias)", "Δ final (dias)", "Duração (dias)"))
+      hour_rows <- review[review$n_before_start_time > 0 | review$n_after_end_time > 0, , drop = FALSE]
+      if (nrow(hour_rows)) {
+        report_table(data.frame(
+          Deployment = hour_rows$deployment_id,
+          `Início cadastrado` = hour_rows$start_date_raw_values,
+          `Primeiro registro` = hour_rows$first_timestamp_raw,
+          `Δ inicial (h)` = decimal(hour_rows$diff_start_hours),
+          `Último registro` = hour_rows$last_timestamp_raw,
+          `Término cadastrado` = hour_rows$end_date_raw_values,
+          `Δ final (h)` = decimal(hour_rows$diff_end_hours),
+          check.names = FALSE
+        ), "Deployments com imagens fora do horário específico cadastrado na data de início ou término. As imagens envolvidas estão identificadas no apêndice.",
+        list_columns = c("Início cadastrado", "Término cadastrado"), code_columns = "Deployment",
+        numeric_columns = c("Δ inicial (h)", "Δ final (h)"))
+      }
+    } else cat("<p>Não foram identificadas ocorrências pelos critérios avaliados neste recorte.</p>\n\n")
+
+    # Painéis com até 30 deployments para preservar a leitura dos identificadores.
+    panels <- split(seq_len(nrow(rows)), ceiling(seq_len(nrow(rows)) / 30L))
+    for (panel_index in seq_along(panels)) {
+      panel <- rows[panels[[panel_index]], , drop = FALSE]
+      panel_keys <- key(panel$project_id, panel$deployment_id)
+      panel_daily <- daily[key(daily$project_id, daily$deployment_id) %in% panel_keys, , drop = FALSE]
+      representable <- any(panel$start_usable & panel$end_usable) || nrow(panel_daily) > 0L
+      if (representable) {
+        plot_result <- list(datas_horas = list(deployment_date_audit = panel, daily_records = panel_daily))
+        p <- plotar_operacao_datas(plot_result, project_id = project, year = year)
+        print(p + ggplot2::labs(title = NULL, subtitle = NULL, caption = NULL) +
+                ggplot2::theme(axis.text.y = ggplot2::element_text(size = 7.5)))
+        figure_counter <- figure_counter + 1L
+        cat('\n\n<p class="figure-caption"><strong>Figura ', figure_counter, ".</strong> Períodos cadastrados e distribuição diária dos registros em ",
+            html_escape(project_name(project)), "; ", html_escape(tolower(year_label(year))),
+            if (length(panels) > 1L) paste0("; painel ", panel_index, " de ", length(panels)) else "",
+            ". O tamanho dos pontos representa a quantidade de registros de imagem.</p>\n\n", sep = "")
+      } else {
+        cat("<p>Não há datas interpretáveis suficientes para representar os deployments deste painel; as ocorrências permanecem nas tabelas.</p>\n\n")
+      }
+    }
+    notes <- field_notes[key(field_notes$project_id, field_notes$deployment_id) %in% key(rows$project_id, rows$deployment_id), , drop = FALSE]
+    if (nrow(notes)) {
+      report_table(data.frame(
+        Deployment = notes$deployment_id,
+        `Situação informada da câmera` = notes$camera_functioning,
+        `Observação de campo` = notes$remarks,
+        check.names = FALSE
+      ), "Observações de campo preservadas no export para interpretação das ocorrências.",
+      list_columns = c("Situação informada da câmera", "Observação de campo"), code_columns = "Deployment")
+    }
+    cat("\n</details>\n\n")
+  }
+}
+```
+
+# Conferência no Wildlife Insights
+
+Os identificadores dos deployments e das imagens permitem localizar os cadastros envolvidos. A conferência deve confrontar os valores da plataforma com as imagens das extremidades, as claquetes e os registros de instalação e retirada. A primeira e a última imagem disponíveis não determinam, isoladamente, as datas corretas de início e término.
+
+As ocorrências de formato, preenchimento ou divergência entre linhas devem ser examinadas antes de interpretar os intervalos. Para imagens fora do período cadastrado, é necessário distinguir erro no período, problema no relógio e registros de preparação ou retirada. Nos intervalos sem imagens e nos períodos curtos, as observações sobre funcionamento e a disponibilidade de registros no export são parte da investigação.
+
+# Limites da avaliação
+
+A auditoria identifica relações que exigem conferência; os resultados não estabelecem automaticamente qual campo deve ser alterado. Os limiares de `r number(gap_days)` e `r number(minimum_days)` dias são critérios de seleção derivados do procedimento de referência, sem exclusão dos registros.
+
+O gráfico tem resolução diária. A avaliação de horas é restrita às informações específicas presentes no cadastro e nos timestamps. A ausência de sinalização não comprova que o relógio estava correto; a confirmação de desconfiguração, desvio ou fuso exige uma referência independente, como as claquetes ou os metadados originais. A ordem das linhas do CSV não foi utilizada como ordem de captura.
+
+Os metadados sobre remoção de imagens vazias e as observações de campo devem ser considerados na interpretação de períodos sem registros. Não se infere continuidade de funcionamento apenas pela extensão do período cadastrado ou pela distribuição das imagens disponíveis.
+
+```{r}
+#| label: disponibilidade-imagens-vazias
+#| results: asis
+blank_metadata <- deployments[!duplicated(deployments$project_id), c("project_id", "project_blank_images")]
+removed <- !is.na(blank_metadata$project_blank_images) & tolower(trimws(blank_metadata$project_blank_images)) %in% c("yes", "some")
+if (any(removed)) {
+  rows <- blank_metadata[removed, , drop = FALSE]
+  report_table(data.frame(
+    UC = project_name(rows$project_id),
+    `Informação no cadastro` = ifelse(tolower(trimws(rows$project_blank_images)) == "yes", "Remoção de imagens vazias declarada", "Remoção parcial de imagens vazias declarada"),
+    check.names = FALSE
+  ), "Projetos cujos metadados declaram remoção de imagens vazias. Informação de contexto para os intervalos sem registros.")
+}
+```
+
+# Apêndice — Imagens e registros para conferência
+
+A relação contém os registros de imagem com ocorrências e os registros que delimitam os intervalos superiores a `r number(gap_days)` dias nas extremidades. Os timestamps e os nomes dos arquivos são apresentados como constam nos exports. A posição do registro no CSV é contada após o cabeçalho. Identificações múltiplas de uma mesma imagem podem corresponder a mais de uma linha de origem.
+
+```{r}
+#| label: registros-imagens
+#| results: asis
+if (!nrow(evidence)) {
+  cat("<p>Não há registros de imagem selecionados para conferência.</p>\n")
+} else {
+  evidence_projects <- unique(as.character(evidence$project_id))
+  evidence_projects <- evidence_projects[order(project_name(evidence_projects))]
+  for (project in evidence_projects) {
+    project_evidence <- evidence[evidence$project_id == project, , drop = FALSE]
+    cat("\n\n## ", html_escape(project_label(project)), " {#imagens-uc-", project, "}\n\n", sep = "")
+    for (year in sort(unique(project_evidence$start_year), na.last = TRUE)) {
+      rows <- if (is.na(year)) project_evidence[is.na(project_evidence$start_year), , drop = FALSE] else {
+        project_evidence[!is.na(project_evidence$start_year) & project_evidence$start_year == year, , drop = FALSE]
+      }
+      rows <- rows[order(rows$deployment_id, rows$timestamp, rows$source_file, rows$source_record, na.last = TRUE), , drop = FALSE]
+      cat("<details><summary>", html_escape(year_label(year)), " — ", number(nrow(rows)), " registros</summary>\n\n", sep = "")
+      report_table(data.frame(
+        Deployment = rows$deployment_id,
+        `Imagem (image_id)` = rows$image_id,
+        `Data e hora original` = rows$timestamp,
+        `Motivo de conferência` = rows$flag_description,
+        `Nome do arquivo` = rows$filename,
+        `CSV de origem` = rows$source_file,
+        `Registro no CSV` = rows$source_record,
+        check.names = FALSE
+      ), paste0("Registros para localização das imagens em ", project_name(project), "; ", tolower(year_label(year)), "."),
+      list_columns = "Motivo de conferência", code_columns = c("Deployment", "Imagem (image_id)", "Nome do arquivo", "CSV de origem"))
+      cat("\n</details>\n\n")
+    }
+  }
+}
+```
