@@ -218,3 +218,4 @@ if (length(audit_function_files) > 0) {
 
 
 message("Ambiente da auditoria configurado.")
+#Fazendo um teste
